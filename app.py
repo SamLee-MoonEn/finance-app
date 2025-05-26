@@ -6,15 +6,15 @@ from datetime import datetime
 import re
 import os
 from dotenv import load_dotenv
-from openai import OpenAI
+import openai
 
 # 환경 변수 로드
 load_dotenv()
 
 app = Flask(__name__)
 
-# OpenAI 클라이언트 초기화
-client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+# OpenAI API 키 설정
+openai.api_key = os.getenv('OPENAI_API_KEY')
 
 # DART Open API 설정
 DART_API_KEY = os.getenv('DART_API_KEY', 'dae459d32716cddf27727ead1c3e509e32e3ddb6')
@@ -232,8 +232,8 @@ def generate_financial_report(company_info, financial_data, ratios):
 5. 향후 주의해야 할 리스크 요인
 """
 
-        # OpenAI API 호출
-        response = client.chat.completions.create(
+        # OpenAI API 호출 (0.28.1 방식)
+        response = openai.ChatCompletion.create(
             model="gpt-4-turbo-preview",
             messages=[
                 {"role": "system", "content": "당신은 전문 재무분석가입니다. 주어진 재무정보를 바탕으로 객관적이고 통찰력 있는 분석 보고서를 작성해주세요."},
@@ -242,15 +242,11 @@ def generate_financial_report(company_info, financial_data, ratios):
             temperature=0.7,
             max_tokens=2000
         )
-        
-        # 응답에서 보고서 내용 추출
-        report = response.choices[0].message.content
-        
+        report = response.choices[0].message['content']
         return {
             'status': 'success',
             'report': report
         }
-        
     except Exception as e:
         print(f"AI 보고서 생성 오류: {e}")
         return {
