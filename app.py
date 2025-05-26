@@ -6,11 +6,15 @@ from datetime import datetime
 import re
 import os
 from dotenv import load_dotenv
+from openai import OpenAI
 
 # 환경 변수 로드
 load_dotenv()
 
 app = Flask(__name__)
+
+# OpenAI 클라이언트 초기화
+client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
 # DART Open API 설정
 DART_API_KEY = os.getenv('DART_API_KEY', 'dae459d32716cddf27727ead1c3e509e32e3ddb6')
@@ -186,6 +190,65 @@ def get_chart_data(financial_data):
     
     return chart_data
 
+def generate_financial_report(company_info, financial_data, ratios):
+    """AI를 사용하여 재무 보고서 생성"""
+    try:
+        # 프롬프트 구성
+        prompt = f"""
+회사명: {company_info['corp_name']}
+업종: {company_info.get('industry', '정보 없음')}
+
+주요 재무 지표:
+- 매출액: {ratios.get('revenue_formatted', '정보 없음')}
+- 영업이익: {ratios.get('operating_profit_formatted', '정보 없음')}
+- 당기순이익: {ratios.get('net_income_formatted', '정보 없음')}
+- 자산총계: {ratios.get('total_assets_formatted', '정보 없음')}
+- 부채총계: {ratios.get('total_liabilities_formatted', '정보 없음')}
+- 자본총계: {ratios.get('total_equity_formatted', '정보 없음')}
+
+재무비율:
+- 영업이익률: {ratios.get('operating_margin', '정보 없음')}%
+- 순이익률: {ratios.get('net_margin', '정보 없음')}%
+- ROE(자기자본이익률): {ratios.get('roe', '정보 없음')}%
+- ROA(총자산이익률): {ratios.get('roa', '정보 없음')}%
+- 부채비율: {ratios.get('debt_ratio', '정보 없음')}%
+- 자기자본비율: {ratios.get('equity_ratio', '정보 없음')}%
+- 유동비율: {ratios.get('current_ratio', '정보 없음')}%
+
+위 정보를 바탕으로 다음 내용을 포함하는 전문적인 재무 분석 보고서를 작성해주세요:
+1. 회사 개요 및 현재 재무상태 요약
+2. 수익성 분석
+3. 재무안정성 분석
+4. 투자 관점에서의 주요 시사점
+5. 향후 주의해야 할 리스크 요인
+"""
+
+        # OpenAI API 호출
+        response = client.chat.completions.create(
+            model="gpt-4-turbo-preview",
+            messages=[
+                {"role": "system", "content": "당신은 전문 재무분석가입니다. 주어진 재무정보를 바탕으로 객관적이고 통찰력 있는 분석 보고서를 작성해주세요."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=2000
+        )
+        
+        # 응답에서 보고서 내용 추출
+        report = response.choices[0].message.content
+        
+        return {
+            'status': 'success',
+            'report': report
+        }
+        
+    except Exception as e:
+        print(f"AI 보고서 생성 오류: {e}")
+        return {
+            'status': 'error',
+            'message': '보고서 생성 중 오류가 발생했습니다.'
+        }
+
 @app.route('/')
 def index():
     """메인 페이지"""
@@ -221,11 +284,11 @@ def get_company_financial(corp_code):
     # 주식코드 확인
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT stock_code FROM companies WHERE corp_code = ?', (corp_code,))
-    result = cursor.fetchone()
+    cursor.execute('SELECT * FROM companies WHERE corp_code = ?', (corp_code,))
+    company = cursor.fetchone()
     conn.close()
     
-    if not result or not result['stock_code'] or not result['stock_code'].strip():
+    if not company or not company['stock_code'] or not company['stock_code'].strip():
         return jsonify({'error': '비상장회사는 재무정보를 제공하지 않습니다.'}), 400
     
     year = request.args.get('year', '2023')
@@ -249,6 +312,9 @@ def get_company_financial(corp_code):
     # 차트용 데이터 생성
     chart_data = get_chart_data(financial_data)
     
+    # AI 보고서 생성
+    ai_report = generate_financial_report(dict(company), financial_data, ratios)
+    
     # 재무제표 테이블용 데이터
     table_data = []
     key_accounts = ['매출액', '영업이익', '당기순이익', '자산총계', '부채총계', '자본총계']
@@ -266,6 +332,7 @@ def get_company_financial(corp_code):
         'financial_ratios': ratios,
         'chart_data': chart_data,
         'table_data': table_data,
+        'ai_report': ai_report,
         'raw_data': financial_data[:10]  # 상위 10개만
     })
 

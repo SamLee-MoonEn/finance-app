@@ -260,6 +260,55 @@
             margin: 0 auto 20px;
         }
 
+        .ai-report {
+            background: #ffffff;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+            line-height: 1.6;
+        }
+
+        .ai-report h2 {
+            color: #1e3c72;
+            font-size: 1.5em;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #eee;
+        }
+
+        .ai-report h3 {
+            color: #2a5298;
+            font-size: 1.2em;
+            margin: 20px 0 10px 0;
+        }
+
+        .ai-report p {
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .ai-report ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+
+        .ai-report li {
+            margin-bottom: 8px;
+        }
+
+        .loading-spinner {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 40px;
+        }
+
+        .loading-spinner i {
+            font-size: 2em;
+            color: #1e3c72;
+            animation: spin 1s linear infinite;
+        }
+
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
@@ -312,10 +361,10 @@
             </div>
             {% else %}
             <div class="tabs">
-                <button class="tab active" data-tab="overview">재무 개요</button>
-                <button class="tab" data-tab="charts">차트 분석</button>
-                <button class="tab" data-tab="ratios">재무비율</button>
-                <button class="tab" data-tab="statements">재무제표</button>
+                <button class="tab active" onclick="showTab('overview')">재무 개요</button>
+                <button class="tab" onclick="showTab('charts')">차트 분석</button>
+                <button class="tab" onclick="showTab('statements')">재무제표</button>
+                <button class="tab" onclick="showTab('ai-analysis')">AI 분석 보고서</button>
             </div>
 
             <div id="overview" class="tab-content active">
@@ -366,6 +415,17 @@
                     </table>
                 </div>
             </div>
+
+            <div id="ai-analysis" class="tab-content">
+                <div class="ai-report">
+                    <h2>AI 재무 분석 보고서</h2>
+                    <div id="ai-report-content">
+                        <div class="loading-spinner">
+                            <i class="fas fa-spinner"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
             {% endif %}
         </div>
     </div>
@@ -396,37 +456,47 @@
             }
         });
 
-        function loadFinancialData() {
-            fetch(`/api/financial/{{ company.corp_code }}?year=2023`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        showError(data.error);
-                        return;
-                    }
+        async function loadFinancialData(year = '2023') {
+            try {
+                showLoading();
+                const response = await fetch(`/api/financial/{{ company.corp_code }}?year=${year}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+                
+                updateFinancialMetrics(data.financial_ratios);
+                updateCharts(data.chart_data);
+                updateFinancialTable(data.table_data);
+                
+                // AI 보고서 업데이트
+                if (data.ai_report && data.ai_report.status === 'success') {
+                    document.getElementById('ai-report-content').innerHTML = 
+                        `<div class="ai-report-text">${formatReport(data.ai_report.report)}</div>`;
+                } else {
+                    document.getElementById('ai-report-content').innerHTML = 
+                        '<div class="error-message">AI 보고서를 생성하는 중 오류가 발생했습니다.</div>';
+                }
+                
+                hideLoading();
+            } catch (error) {
+                console.error('Error:', error);
+                showError('데이터를 불러오는 중 오류가 발생했습니다.');
+                hideLoading();
+            }
+        }
 
-                    // 재무 개요 업데이트
-                    updateOverview(data);
-                    
-                    // 차트 생성
-                    if (data.chart_data) {
-                        createCharts(data.chart_data);
-                    }
-                    
-                    // 재무비율 업데이트
-                    if (data.financial_ratios) {
-                        updateRatios(data.financial_ratios);
-                    }
-                    
-                    // 재무제표 테이블 업데이트
-                    if (data.table_data) {
-                        updateFinancialTable(data.table_data);
-                    }
-                })
-                .catch(error => {
-                    console.error('재무데이터 로드 오류:', error);
-                    showError('재무정보를 불러오는 중 오류가 발생했습니다.');
-                });
+        function formatReport(report) {
+            // 마크다운 스타일의 제목을 HTML로 변환
+            return report
+                .replace(/\n\n/g, '</p><p>')
+                .replace(/\n/g, '<br>')
+                .replace(/^(.+)$/gm, '<p>$1</p>')
+                .replace(/### (.+)/g, '<h3>$1</h3>')
+                .replace(/## (.+)/g, '<h2>$1</h2>')
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
         }
 
         function updateOverview(data) {
