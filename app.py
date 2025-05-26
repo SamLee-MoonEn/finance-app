@@ -93,15 +93,31 @@ def get_financial_data(corp_code, bsns_year="2023", reprt_code="11011"):
         }
         
         response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()  # HTTP 에러 체크
+        response.raise_for_status()
         data = response.json()
         
         status = data.get('status')
         if status == '000':
+            # 연결재무제표와 개별재무제표 분리
+            cfs_data = [item for item in data.get('list', []) if item.get('fs_div') == 'CFS']
+            ofs_data = [item for item in data.get('list', []) if item.get('fs_div') == 'OFS']
+            
+            # 재무상태표와 손익계산서 분리
+            financial_data = {
+                'cfs': {
+                    'bs': [item for item in cfs_data if item.get('sj_div') == 'BS'],
+                    'is': [item for item in cfs_data if item.get('sj_div') == 'IS']
+                },
+                'ofs': {
+                    'bs': [item for item in ofs_data if item.get('sj_div') == 'BS'],
+                    'is': [item for item in ofs_data if item.get('sj_div') == 'IS']
+                }
+            }
+            
             return {
                 'status': 'success',
                 'message': DART_STATUS_CODES.get(status, '알 수 없는 상태'),
-                'data': data.get('list', [])
+                'data': financial_data
             }
         else:
             error_message = DART_STATUS_CODES.get(status, '알 수 없는 오류')
@@ -138,55 +154,58 @@ def calculate_financial_ratios(financial_data):
     """재무비율 계산"""
     ratios = {}
     
-    # 재무데이터를 계정명으로 인덱싱 (연결재무제표 우선)
-    accounts = {}
-    for item in financial_data:
-        if item.get('fs_div') == 'CFS':  # 연결재무제표 우선
-            account_name = item.get('account_nm')
-            accounts[account_name] = item
-    
-    # 연결재무제표가 없으면 개별재무제표 사용
-    if not accounts:
-        for item in financial_data:
-            if item.get('fs_div') == 'OFS':  # 개별재무제표
-                account_name = item.get('account_nm')
-                accounts[account_name] = item
-    
     try:
-        # 주요 계정 추출 및 숫자 변환
-        revenue = clean_number(accounts.get('매출액', {}).get('thstrm_amount', 0))
-        operating_profit = clean_number(accounts.get('영업이익', {}).get('thstrm_amount', 0))
-        net_income = clean_number(accounts.get('당기순이익', {}).get('thstrm_amount', 0))
-        total_assets = clean_number(accounts.get('자산총계', {}).get('thstrm_amount', 0))
-        total_liabilities = clean_number(accounts.get('부채총계', {}).get('thstrm_amount', 0))
-        total_equity = clean_number(accounts.get('자본총계', {}).get('thstrm_amount', 0))
-        current_assets = clean_number(accounts.get('유동자산', {}).get('thstrm_amount', 0))
-        current_liabilities = clean_number(accounts.get('유동부채', {}).get('thstrm_amount', 0))
+        # 연결재무제표 데이터 사용
+        bs_data = financial_data['cfs']['bs']
+        is_data = financial_data['cfs']['is']
+        
+        # 주요 계정 찾기
+        def find_account(data, account_name):
+            for item in data:
+                if item.get('account_nm') == account_name:
+                    return {
+                        'current': clean_number(item.get('thstrm_amount', 0)),
+                        'previous': clean_number(item.get('frmtrm_amount', 0)),
+                        'previous2': clean_number(item.get('bfefrmtrm_amount', 0))
+                    }
+            return {'current': 0, 'previous': 0, 'previous2': 0}
+        
+        # 재무상태표 계정
+        assets = find_account(bs_data, '자산총계')
+        liabilities = find_account(bs_data, '부채총계')
+        equity = find_account(bs_data, '자본총계')
+        current_assets = find_account(bs_data, '유동자산')
+        current_liabilities = find_account(bs_data, '유동부채')
+        
+        # 손익계산서 계정
+        revenue = find_account(is_data, '매출액')
+        operating_profit = find_account(is_data, '영업이익')
+        net_income = find_account(is_data, '당기순이익')
         
         # 수익성 비율 계산
-        if revenue > 0:
-            ratios['operating_margin'] = round((operating_profit / revenue) * 100, 1)
-            ratios['net_margin'] = round((net_income / revenue) * 100, 1)
+        if revenue['current'] > 0:
+            ratios['operating_margin'] = round((operating_profit['current'] / revenue['current']) * 100, 1)
+            ratios['net_margin'] = round((net_income['current'] / revenue['current']) * 100, 1)
         
         # 안정성 비율 계산
-        if total_equity > 0:
-            ratios['debt_ratio'] = round((total_liabilities / total_equity) * 100, 1)
-            ratios['roe'] = round((net_income / total_equity) * 100, 1)
+        if equity['current'] > 0:
+            ratios['debt_ratio'] = round((liabilities['current'] / equity['current']) * 100, 1)
+            ratios['roe'] = round((net_income['current'] / equity['current']) * 100, 1)
         
-        if total_assets > 0:
-            ratios['roa'] = round((net_income / total_assets) * 100, 1)
-            ratios['equity_ratio'] = round((total_equity / total_assets) * 100, 1)
+        if assets['current'] > 0:
+            ratios['roa'] = round((net_income['current'] / assets['current']) * 100, 1)
+            ratios['equity_ratio'] = round((equity['current'] / assets['current']) * 100, 1)
         
-        if current_liabilities > 0:
-            ratios['current_ratio'] = round((current_assets / current_liabilities) * 100, 1)
+        if current_liabilities['current'] > 0:
+            ratios['current_ratio'] = round((current_assets['current'] / current_liabilities['current']) * 100, 1)
         
         # 기본 수치 저장 (포맷된 형태)
-        ratios['revenue_formatted'] = format_amount(revenue)
-        ratios['operating_profit_formatted'] = format_amount(operating_profit)
-        ratios['net_income_formatted'] = format_amount(net_income)
-        ratios['total_assets_formatted'] = format_amount(total_assets)
-        ratios['total_liabilities_formatted'] = format_amount(total_liabilities)
-        ratios['total_equity_formatted'] = format_amount(total_equity)
+        ratios['revenue_formatted'] = format_amount(revenue['current'])
+        ratios['operating_profit_formatted'] = format_amount(operating_profit['current'])
+        ratios['net_income_formatted'] = format_amount(net_income['current'])
+        ratios['total_assets_formatted'] = format_amount(assets['current'])
+        ratios['total_liabilities_formatted'] = format_amount(liabilities['current'])
+        ratios['total_equity_formatted'] = format_amount(equity['current'])
             
     except Exception as e:
         print(f"재무비율 계산 오류: {e}")
@@ -197,53 +216,62 @@ def get_chart_data(financial_data):
     """차트용 데이터 추출"""
     chart_data = {}
     
-    # 연결재무제표 우선 선택
-    accounts = {}
-    for item in financial_data:
-        if item.get('fs_div') == 'CFS':
-            account_name = item.get('account_nm')
-            accounts[account_name] = item
-    
-    if not accounts:  # 연결재무제표가 없으면 개별재무제표
-        for item in financial_data:
-            if item.get('fs_div') == 'OFS':
-                account_name = item.get('account_nm')
-                accounts[account_name] = item
-    
     try:
-        # 자산/부채/자본 구성 (조원 단위)
-        total_assets = clean_number(accounts.get('자산총계', {}).get('thstrm_amount', 0)) / 1000000000000
-        total_liabilities = clean_number(accounts.get('부채총계', {}).get('thstrm_amount', 0)) / 1000000000000
-        total_equity = clean_number(accounts.get('자본총계', {}).get('thstrm_amount', 0)) / 1000000000000
+        # 연결재무제표 데이터 사용
+        bs_data = financial_data['cfs']['bs']
+        is_data = financial_data['cfs']['is']
+        
+        def find_account(data, account_name):
+            for item in data:
+                if item.get('account_nm') == account_name:
+                    return {
+                        'current': clean_number(item.get('thstrm_amount', 0)),
+                        'previous': clean_number(item.get('frmtrm_amount', 0)),
+                        'previous2': clean_number(item.get('bfefrmtrm_amount', 0))
+                    }
+            return {'current': 0, 'previous': 0, 'previous2': 0}
+        
+        # 재무상태표 데이터 (조원 단위)
+        assets = find_account(bs_data, '자산총계')
+        liabilities = find_account(bs_data, '부채총계')
+        equity = find_account(bs_data, '자본총계')
         
         chart_data['balance'] = {
             'labels': ['자산총계', '부채총계', '자본총계'],
-            'data': [round(total_assets, 1), round(total_liabilities, 1), round(total_equity, 1)]
+            'data': [
+                round(assets['current'] / 1000000000000, 1),
+                round(liabilities['current'] / 1000000000000, 1),
+                round(equity['current'] / 1000000000000, 1)
+            ]
         }
         
-        # 매출액 3년 추이 (조원 단위)
-        revenue_current = clean_number(accounts.get('매출액', {}).get('thstrm_amount', 0)) / 1000000000000
-        revenue_prev = clean_number(accounts.get('매출액', {}).get('frmtrm_amount', 0)) / 1000000000000
-        revenue_prev2 = clean_number(accounts.get('매출액', {}).get('bfefrmtrm_amount', 0)) / 1000000000000
-        
+        # 매출액 추이 (조원 단위)
+        revenue = find_account(is_data, '매출액')
         chart_data['revenue_trend'] = {
             'labels': ['전전기', '전기', '당기'],
-            'data': [round(revenue_prev2, 1), round(revenue_prev, 1), round(revenue_current, 1)]
+            'data': [
+                round(revenue['previous2'] / 1000000000000, 1),
+                round(revenue['previous'] / 1000000000000, 1),
+                round(revenue['current'] / 1000000000000, 1)
+            ]
         }
         
-        # 이익 3년 추이 (조원 단위)
-        op_current = clean_number(accounts.get('영업이익', {}).get('thstrm_amount', 0)) / 1000000000000
-        op_prev = clean_number(accounts.get('영업이익', {}).get('frmtrm_amount', 0)) / 1000000000000
-        op_prev2 = clean_number(accounts.get('영업이익', {}).get('bfefrmtrm_amount', 0)) / 1000000000000
-        
-        net_current = clean_number(accounts.get('당기순이익', {}).get('thstrm_amount', 0)) / 1000000000000
-        net_prev = clean_number(accounts.get('당기순이익', {}).get('frmtrm_amount', 0)) / 1000000000000
-        net_prev2 = clean_number(accounts.get('당기순이익', {}).get('bfefrmtrm_amount', 0)) / 1000000000000
+        # 이익 추이 (조원 단위)
+        operating_profit = find_account(is_data, '영업이익')
+        net_income = find_account(is_data, '당기순이익')
         
         chart_data['profit_trend'] = {
             'labels': ['전전기', '전기', '당기'],
-            'operating_profit': [round(op_prev2, 1), round(op_prev, 1), round(op_current, 1)],
-            'net_income': [round(net_prev2, 1), round(net_prev, 1), round(net_current, 1)]
+            'operating_profit': [
+                round(operating_profit['previous2'] / 1000000000000, 1),
+                round(operating_profit['previous'] / 1000000000000, 1),
+                round(operating_profit['current'] / 1000000000000, 1)
+            ],
+            'net_income': [
+                round(net_income['previous2'] / 1000000000000, 1),
+                round(net_income['previous'] / 1000000000000, 1),
+                round(net_income['current'] / 1000000000000, 1)
+            ]
         }
         
     except Exception as e:
@@ -399,8 +427,8 @@ def get_company_financial(corp_code):
     table_data = []
     key_accounts = ['매출액', '영업이익', '당기순이익', '자산총계', '부채총계', '자본총계']
     
-    for item in financial_data:
-        if item.get('fs_div') == 'CFS' and item.get('account_nm') in key_accounts:
+    for item in financial_data['cfs']['bs']:
+        if item.get('account_nm') in key_accounts:
             table_data.append({
                 'account_nm': item.get('account_nm'),
                 'thstrm_amount': format_amount(clean_number(item.get('thstrm_amount', 0))),
@@ -413,7 +441,7 @@ def get_company_financial(corp_code):
         'chart_data': chart_data,
         'table_data': table_data,
         'ai_report': ai_report,
-        'raw_data': financial_data[:10]  # 상위 10개만
+        'raw_data': financial_data['cfs']['bs'][:10]  # 상위 10개만
     })
 
 @app.route('/api/companies')
