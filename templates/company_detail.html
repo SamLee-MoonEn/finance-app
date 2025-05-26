@@ -215,14 +215,58 @@
             font-weight: 500;
         }
 
-        .error-message {
-            background: #fff3cd;
-            border: 1px solid #ffeaa7;
-            border-radius: 10px;
-            padding: 20px;
-            margin: 20px 0;
+        .error-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
             text-align: center;
-            color: #856404;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin: 1rem;
+        }
+
+        .error-icon {
+            font-size: 3rem;
+            color: #dc3545;
+            margin-bottom: 1rem;
+        }
+
+        .error-message {
+            color: #721c24;
+        }
+
+        .error-message h3 {
+            margin-bottom: 0.5rem;
+            font-size: 1.2rem;
+        }
+
+        .error-message p {
+            margin-bottom: 1rem;
+            color: #666;
+        }
+
+        .retry-button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: background-color 0.2s;
+        }
+
+        .retry-button:hover {
+            background-color: #0056b3;
+        }
+
+        .retry-button i {
+            font-size: 0.9rem;
         }
 
         .unlisted-notice {
@@ -431,303 +475,319 @@
     </div>
 
     <script>
-        // 탭 기능
         document.addEventListener('DOMContentLoaded', function() {
-            const tabs = document.querySelectorAll('.tab');
-            const tabContents = document.querySelectorAll('.tab-content');
-
-            tabs.forEach(tab => {
-                tab.addEventListener('click', function() {
-                    // 모든 탭 비활성화
-                    tabs.forEach(t => t.classList.remove('active'));
-                    tabContents.forEach(content => content.classList.remove('active'));
-
-                    // 현재 탭 활성화
-                    this.classList.add('active');
-                    const targetTab = this.getAttribute('data-tab');
-                    document.getElementById(targetTab).classList.add('active');
+            loadFinancialData();
+            
+            // 차트 객체들을 저장할 변수
+            let charts = {};
+            
+            function showLoading() {
+                const tabs = document.querySelectorAll('.tab-content');
+                tabs.forEach(tab => {
+                    if (tab.classList.contains('active')) {
+                        tab.innerHTML = `
+                            <div class="loading">
+                                <div class="spinner"></div>
+                                <p>재무정보를 불러오는 중...</p>
+                            </div>
+                        `;
+                    }
                 });
-            });
-
-            // 상장회사인 경우에만 재무데이터 로드
-            const isUnlisted = {{ 'true' if is_unlisted else 'false' }};
-            if (!isUnlisted) {
+            }
+            
+            function hideLoading() {
+                const loadingElements = document.querySelectorAll('.loading');
+                loadingElements.forEach(el => el.style.display = 'none');
+            }
+            
+            function showError(message) {
+                const tabs = document.querySelectorAll('.tab-content');
+                tabs.forEach(tab => {
+                    if (tab.classList.contains('active')) {
+                        tab.innerHTML = `
+                            <div class="error-container">
+                                <div class="error-icon">
+                                    <i class="fas fa-exclamation-circle"></i>
+                                </div>
+                                <div class="error-message">
+                                    <h3>재무정보 조회 오류</h3>
+                                    <p>${message}</p>
+                                    <button onclick="retryLoading()" class="retry-button">
+                                        <i class="fas fa-sync-alt"></i> 다시 시도
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }
+                });
+            }
+            
+            function retryLoading() {
                 loadFinancialData();
             }
-        });
-
-        async function loadFinancialData(year = '2023') {
-            try {
-                showLoading();
-                const response = await fetch(`/api/financial/{{ company.corp_code }}?year=${year}`);
-                const data = await response.json();
-                
-                if (data.error) {
-                    showError(data.error);
-                    return;
+            
+            async function loadFinancialData(year = '2023') {
+                try {
+                    showLoading();
+                    const response = await fetch(`/api/financial/{{ company.corp_code }}?year=${year}`);
+                    const data = await response.json();
+                    
+                    if (data.error) {
+                        showError(data.error);
+                        return;
+                    }
+                    
+                    updateFinancialMetrics(data.financial_ratios);
+                    updateCharts(data.chart_data);
+                    updateFinancialTable(data.table_data);
+                    
+                    // AI 보고서 업데이트
+                    if (data.ai_report && data.ai_report.status === 'success') {
+                        document.getElementById('ai-report-content').innerHTML = 
+                            `<div class="ai-report-text">${formatReport(data.ai_report.report)}</div>`;
+                    } else {
+                        document.getElementById('ai-report-content').innerHTML = 
+                            '<div class="error-message">AI 보고서를 생성하는 중 오류가 발생했습니다.</div>';
+                    }
+                    
+                    hideLoading();
+                } catch (error) {
+                    console.error('Error:', error);
+                    showError('데이터를 불러오는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+                    hideLoading();
                 }
-                
-                updateFinancialMetrics(data.financial_ratios);
-                updateCharts(data.chart_data);
-                updateFinancialTable(data.table_data);
-                
-                // AI 보고서 업데이트
-                if (data.ai_report && data.ai_report.status === 'success') {
-                    document.getElementById('ai-report-content').innerHTML = 
-                        `<div class="ai-report-text">${formatReport(data.ai_report.report)}</div>`;
-                } else {
-                    document.getElementById('ai-report-content').innerHTML = 
-                        '<div class="error-message">AI 보고서를 생성하는 중 오류가 발생했습니다.</div>';
-                }
-                
-                hideLoading();
-            } catch (error) {
-                console.error('Error:', error);
-                showError('데이터를 불러오는 중 오류가 발생했습니다.');
-                hideLoading();
             }
-        }
-
-        function formatReport(report) {
-            // 마크다운 스타일의 제목을 HTML로 변환
-            return report
-                .replace(/\n\n/g, '</p><p>')
-                .replace(/\n/g, '<br>')
-                .replace(/^(.+)$/gm, '<p>$1</p>')
-                .replace(/### (.+)/g, '<h3>$1</h3>')
-                .replace(/## (.+)/g, '<h2>$1</h2>')
-                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-        }
-
-        function updateOverview(data) {
-            const overviewTab = document.getElementById('overview');
-            const ratios = data.financial_ratios;
             
-            const html = '<div class="metrics-grid">' +
-                '<div class="metric-card">' +
-                    '<div class="metric-title">매출액</div>' +
-                    '<div class="metric-value">' + (ratios.revenue_formatted || '정보없음') + '</div>' +
-                    '<div class="metric-description">당기 연결기준 매출액</div>' +
-                '</div>' +
-                '<div class="metric-card">' +
-                    '<div class="metric-title">영업이익</div>' +
-                    '<div class="metric-value">' + (ratios.operating_profit_formatted || '정보없음') + '</div>' +
-                    '<div class="metric-description">당기 연결기준 영업이익</div>' +
-                '</div>' +
-                '<div class="metric-card">' +
-                    '<div class="metric-title">당기순이익</div>' +
-                    '<div class="metric-value">' + (ratios.net_income_formatted || '정보없음') + '</div>' +
-                    '<div class="metric-description">당기 연결기준 순이익</div>' +
-                '</div>' +
-                '<div class="metric-card">' +
-                    '<div class="metric-title">자산총계</div>' +
-                    '<div class="metric-value">' + (ratios.total_assets_formatted || '정보없음') + '</div>' +
-                    '<div class="metric-description">당기말 연결기준 자산총계</div>' +
-                '</div>' +
-                '<div class="metric-card">' +
-                    '<div class="metric-title">부채총계</div>' +
-                    '<div class="metric-value">' + (ratios.total_liabilities_formatted || '정보없음') + '</div>' +
-                    '<div class="metric-description">당기말 연결기준 부채총계</div>' +
-                '</div>' +
-                '<div class="metric-card">' +
-                    '<div class="metric-title">자본총계</div>' +
-                    '<div class="metric-value">' + (ratios.total_equity_formatted || '정보없음') + '</div>' +
-                    '<div class="metric-description">당기말 연결기준 자본총계</div>' +
-                '</div>' +
-            '</div>';
-            
-            overviewTab.innerHTML = html;
-        }
+            function formatReport(report) {
+                // 마크다운 스타일의 제목을 HTML로 변환
+                return report
+                    .replace(/\n\n/g, '</p><p>')
+                    .replace(/\n/g, '<br>')
+                    .replace(/^(.+)$/gm, '<p>$1</p>')
+                    .replace(/### (.+)/g, '<h3>$1</h3>')
+                    .replace(/## (.+)/g, '<h2>$1</h2>')
+                    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            }
 
-        function createCharts(chartData) {
-            // 자산/부채/자본 구성 차트
-            if (chartData.balance) {
-                const balanceCtx = document.getElementById('balanceChart').getContext('2d');
-                new Chart(balanceCtx, {
-                    type: 'doughnut',
-                    data: {
-                        labels: chartData.balance.labels,
-                        datasets: [{
-                            data: chartData.balance.data,
-                            backgroundColor: ['#36A2EB', '#FF6384', '#FFCE56'],
-                            borderWidth: 2,
-                            borderColor: '#fff'
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        plugins: {
-                            legend: {
-                                position: 'bottom'
-                            },
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        return context.label + ': ' + context.parsed + '조원';
+            function updateOverview(data) {
+                const overviewTab = document.getElementById('overview');
+                const ratios = data.financial_ratios;
+                
+                const html = '<div class="metrics-grid">' +
+                    '<div class="metric-card">' +
+                        '<div class="metric-title">매출액</div>' +
+                        '<div class="metric-value">' + (ratios.revenue_formatted || '정보없음') + '</div>' +
+                        '<div class="metric-description">당기 연결기준 매출액</div>' +
+                    '</div>' +
+                    '<div class="metric-card">' +
+                        '<div class="metric-title">영업이익</div>' +
+                        '<div class="metric-value">' + (ratios.operating_profit_formatted || '정보없음') + '</div>' +
+                        '<div class="metric-description">당기 연결기준 영업이익</div>' +
+                    '</div>' +
+                    '<div class="metric-card">' +
+                        '<div class="metric-title">당기순이익</div>' +
+                        '<div class="metric-value">' + (ratios.net_income_formatted || '정보없음') + '</div>' +
+                        '<div class="metric-description">당기 연결기준 순이익</div>' +
+                    '</div>' +
+                    '<div class="metric-card">' +
+                        '<div class="metric-title">자산총계</div>' +
+                        '<div class="metric-value">' + (ratios.total_assets_formatted || '정보없음') + '</div>' +
+                        '<div class="metric-description">당기말 연결기준 자산총계</div>' +
+                    '</div>' +
+                    '<div class="metric-card">' +
+                        '<div class="metric-title">부채총계</div>' +
+                        '<div class="metric-value">' + (ratios.total_liabilities_formatted || '정보없음') + '</div>' +
+                        '<div class="metric-description">당기말 연결기준 부채총계</div>' +
+                    '</div>' +
+                    '<div class="metric-card">' +
+                        '<div class="metric-title">자본총계</div>' +
+                        '<div class="metric-value">' + (ratios.total_equity_formatted || '정보없음') + '</div>' +
+                        '<div class="metric-description">당기말 연결기준 자본총계</div>' +
+                    '</div>' +
+                '</div>';
+                
+                overviewTab.innerHTML = html;
+            }
+
+            function createCharts(chartData) {
+                // 자산/부채/자본 구성 차트
+                if (chartData.balance) {
+                    const balanceCtx = document.getElementById('balanceChart').getContext('2d');
+                    new Chart(balanceCtx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: chartData.balance.labels,
+                            datasets: [{
+                                data: chartData.balance.data,
+                                backgroundColor: ['#36A2EB', '#FF6384', '#FFCE56'],
+                                borderWidth: 2,
+                                borderColor: '#fff'
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: {
+                                    position: 'bottom'
+                                },
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            return context.label + ': ' + context.parsed + '조원';
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                });
-            }
-
-            // 매출액 추이 차트
-            if (chartData.revenue_trend) {
-                const revenueCtx = document.getElementById('revenueChart').getContext('2d');
-                new Chart(revenueCtx, {
-                    type: 'line',
-                    data: {
-                        labels: chartData.revenue_trend.labels,
-                        datasets: [{
-                            label: '매출액 (조원)',
-                            data: chartData.revenue_trend.data,
-                            borderColor: '#1e3c72',
-                            backgroundColor: 'rgba(30, 60, 114, 0.1)',
-                            borderWidth: 3,
-                            fill: true,
-                            tension: 0.4
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        plugins: {
-                            legend: {
-                                display: false
-                            }
-                        },
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                title: {
-                                    display: true,
-                                    text: '조원'
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-
-            // 이익 추이 차트
-            if (chartData.profit_trend) {
-                const profitCtx = document.getElementById('profitChart').getContext('2d');
-                new Chart(profitCtx, {
-                    type: 'line',
-                    data: {
-                        labels: chartData.profit_trend.labels,
-                        datasets: [
-                            {
-                                label: '영업이익 (조원)',
-                                data: chartData.profit_trend.operating_profit,
-                                borderColor: '#FF6384',
-                                backgroundColor: 'rgba(255, 99, 132, 0.1)',
-                                borderWidth: 3,
-                                fill: false
-                            },
-                            {
-                                label: '당기순이익 (조원)',
-                                data: chartData.profit_trend.net_income,
-                                borderColor: '#36A2EB',
-                                backgroundColor: 'rgba(54, 162, 235, 0.1)',
-                                borderWidth: 3,
-                                fill: false
-                            }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        plugins: {
-                            legend: {
-                                position: 'top'
-                            }
-                        },
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                title: {
-                                    display: true,
-                                    text: '조원'
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-        }
-
-        function updateRatios(ratios) {
-            const ratiosGrid = document.getElementById('ratiosGrid');
-            
-            const ratioCards = [
-                {
-                    title: 'ROE (자기자본이익률)',
-                    value: ratios.roe ? `${ratios.roe}%` : '정보없음',
-                    description: '자기자본 대비 순이익의 비율. 높을수록 자본 효율성이 좋음.'
-                },
-                {
-                    title: 'ROA (총자산이익률)',
-                    value: ratios.roa ? `${ratios.roa}%` : '정보없음',
-                    description: '총자산 대비 순이익의 비율. 자산 활용 효율성을 나타냄.'
-                },
-                {
-                    title: '영업이익률',
-                    value: ratios.operating_margin ? `${ratios.operating_margin}%` : '정보없음',
-                    description: '매출액 대비 영업이익의 비율. 핵심 사업의 수익성을 측정.'
-                },
-                {
-                    title: '순이익률',
-                    value: ratios.net_margin ? `${ratios.net_margin}%` : '정보없음',
-                    description: '매출액 대비 순이익의 비율. 전체적인 수익성을 나타냄.'
-                },
-                {
-                    title: '부채비율',
-                    value: ratios.debt_ratio ? `${ratios.debt_ratio}%` : '정보없음',
-                    description: '자기자본 대비 부채의 비율. 낮을수록 재무 안정성이 높음.'
-                },
-                {
-                    title: '자기자본비율',
-                    value: ratios.equity_ratio ? `${ratios.equity_ratio}%` : '정보없음',
-                    description: '총자산 대비 자기자본의 비율. 높을수록 재무구조가 안정적.'
+                    });
                 }
-            ];
 
-            ratiosGrid.innerHTML = ratioCards.map(ratio => `
-                <div class="metric-card">
-                    <div class="metric-title">${ratio.title}</div>
-                    <div class="metric-value">${ratio.value}</div>
-                    <div class="metric-description">${ratio.description}</div>
-                </div>
-            `).join('');
-        }
+                // 매출액 추이 차트
+                if (chartData.revenue_trend) {
+                    const revenueCtx = document.getElementById('revenueChart').getContext('2d');
+                    new Chart(revenueCtx, {
+                        type: 'line',
+                        data: {
+                            labels: chartData.revenue_trend.labels,
+                            datasets: [{
+                                label: '매출액 (조원)',
+                                data: chartData.revenue_trend.data,
+                                borderColor: '#1e3c72',
+                                backgroundColor: 'rgba(30, 60, 114, 0.1)',
+                                borderWidth: 3,
+                                fill: true,
+                                tension: 0.4
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: {
+                                    display: false
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    title: {
+                                        display: true,
+                                        text: '조원'
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
 
-        function updateFinancialTable(tableData) {
-            const tbody = document.querySelector('#financialTable tbody');
-            
-            if (tableData && tableData.length > 0) {
-                tbody.innerHTML = tableData.map(row => `
-                    <tr>
-                        <td>${row.account_nm}</td>
-                        <td>${row.bfefrmtrm_amount || '-'}</td>
-                        <td>${row.frmtrm_amount || '-'}</td>
-                        <td>${row.thstrm_amount || '-'}</td>
-                    </tr>
-                `).join('');
-            } else {
-                tbody.innerHTML = '<tr><td colspan="4">재무제표 데이터가 없습니다.</td></tr>';
+                // 이익 추이 차트
+                if (chartData.profit_trend) {
+                    const profitCtx = document.getElementById('profitChart').getContext('2d');
+                    new Chart(profitCtx, {
+                        type: 'line',
+                        data: {
+                            labels: chartData.profit_trend.labels,
+                            datasets: [
+                                {
+                                    label: '영업이익 (조원)',
+                                    data: chartData.profit_trend.operating_profit,
+                                    borderColor: '#FF6384',
+                                    backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                                    borderWidth: 3,
+                                    fill: false
+                                },
+                                {
+                                    label: '당기순이익 (조원)',
+                                    data: chartData.profit_trend.net_income,
+                                    borderColor: '#36A2EB',
+                                    backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                                    borderWidth: 3,
+                                    fill: false
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: {
+                                    position: 'top'
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    title: {
+                                        display: true,
+                                        text: '조원'
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
             }
-        }
 
-        function showError(message) {
-            const overviewTab = document.getElementById('overview');
-            overviewTab.innerHTML = `
-                <div class="error-message">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    <h3>재무정보 조회 오류</h3>
-                    <p>${message}</p>
-                </div>
-            `;
-        }
+            function updateRatios(ratios) {
+                const ratiosGrid = document.getElementById('ratiosGrid');
+                
+                const ratioCards = [
+                    {
+                        title: 'ROE (자기자본이익률)',
+                        value: ratios.roe ? `${ratios.roe}%` : '정보없음',
+                        description: '자기자본 대비 순이익의 비율. 높을수록 자본 효율성이 좋음.'
+                    },
+                    {
+                        title: 'ROA (총자산이익률)',
+                        value: ratios.roa ? `${ratios.roa}%` : '정보없음',
+                        description: '총자산 대비 순이익의 비율. 자산 활용 효율성을 나타냄.'
+                    },
+                    {
+                        title: '영업이익률',
+                        value: ratios.operating_margin ? `${ratios.operating_margin}%` : '정보없음',
+                        description: '매출액 대비 영업이익의 비율. 핵심 사업의 수익성을 측정.'
+                    },
+                    {
+                        title: '순이익률',
+                        value: ratios.net_margin ? `${ratios.net_margin}%` : '정보없음',
+                        description: '매출액 대비 순이익의 비율. 전체적인 수익성을 나타냄.'
+                    },
+                    {
+                        title: '부채비율',
+                        value: ratios.debt_ratio ? `${ratios.debt_ratio}%` : '정보없음',
+                        description: '자기자본 대비 부채의 비율. 낮을수록 재무 안정성이 높음.'
+                    },
+                    {
+                        title: '자기자본비율',
+                        value: ratios.equity_ratio ? `${ratios.equity_ratio}%` : '정보없음',
+                        description: '총자산 대비 자기자본의 비율. 높을수록 재무구조가 안정적.'
+                    }
+                ];
+
+                ratiosGrid.innerHTML = ratioCards.map(ratio => `
+                    <div class="metric-card">
+                        <div class="metric-title">${ratio.title}</div>
+                        <div class="metric-value">${ratio.value}</div>
+                        <div class="metric-description">${ratio.description}</div>
+                    </div>
+                `).join('');
+            }
+
+            function updateFinancialTable(tableData) {
+                const tbody = document.querySelector('#financialTable tbody');
+                
+                if (tableData && tableData.length > 0) {
+                    tbody.innerHTML = tableData.map(row => `
+                        <tr>
+                            <td>${row.account_nm}</td>
+                            <td>${row.bfefrmtrm_amount || '-'}</td>
+                            <td>${row.frmtrm_amount || '-'}</td>
+                            <td>${row.thstrm_amount || '-'}</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="4">재무제표 데이터가 없습니다.</td></tr>';
+                }
+            }
+        });
     </script>
 </body>
 </html> 

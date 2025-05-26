@@ -16,8 +16,24 @@ app = Flask(__name__)
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 # DART Open API 설정
-DART_API_KEY = os.getenv('DART_API_KEY', 'dae459d32716cddf27727ead1c3e509e32e3ddb6')
+DART_API_KEY = os.getenv('DART_API_KEY')
+if not DART_API_KEY:
+    print("Warning: DART_API_KEY not found in environment variables")
 DART_API_BASE_URL = "https://opendart.fss.or.kr/api"
+
+# API 응답 상태 코드
+DART_STATUS_CODES = {
+    '000': '정상',
+    '010': '등록되지 않은 키입니다.',
+    '011': '사용할 수 없는 키입니다.',
+    '012': '접근할 수 없는 IP입니다.',
+    '013': '조회된 데이터가 없습니다.',
+    '014': '파일이 존재하지 않습니다.',
+    '020': '요청 제한을 초과하였습니다.',
+    '100': '필드의 부적절한 값입니다.',
+    '800': '시스템 점검 중입니다.',
+    '900': '정의되지 않은 오류가 발생하였습니다.'
+}
 
 def get_db_connection():
     """데이터베이스 연결"""
@@ -60,6 +76,13 @@ def format_amount(amount):
 
 def get_financial_data(corp_code, bsns_year="2023", reprt_code="11011"):
     """DART API에서 재무정보 가져오기"""
+    if not DART_API_KEY:
+        return {
+            'status': 'error',
+            'message': 'DART API 키가 설정되지 않았습니다.',
+            'data': []
+        }
+
     try:
         url = f"{DART_API_BASE_URL}/fnlttSinglAcnt.json"
         params = {
@@ -70,16 +93,46 @@ def get_financial_data(corp_code, bsns_year="2023", reprt_code="11011"):
         }
         
         response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()  # HTTP 에러 체크
         data = response.json()
         
-        if data.get('status') == '000':
-            return data.get('list', [])
+        status = data.get('status')
+        if status == '000':
+            return {
+                'status': 'success',
+                'message': DART_STATUS_CODES.get(status, '알 수 없는 상태'),
+                'data': data.get('list', [])
+            }
         else:
-            print(f"DART API 오류: {data.get('message', '알 수 없는 오류')}")
-            return []
+            error_message = DART_STATUS_CODES.get(status, '알 수 없는 오류')
+            print(f"DART API 오류 ({status}): {error_message}")
+            return {
+                'status': 'error',
+                'message': f"DART API 오류: {error_message}",
+                'data': []
+            }
+            
+    except requests.exceptions.Timeout:
+        print("DART API 요청 시간 초과")
+        return {
+            'status': 'error',
+            'message': 'DART API 요청 시간이 초과되었습니다.',
+            'data': []
+        }
+    except requests.exceptions.RequestException as e:
+        print(f"DART API 요청 오류: {e}")
+        return {
+            'status': 'error',
+            'message': 'DART API 요청 중 오류가 발생했습니다.',
+            'data': []
+        }
     except Exception as e:
         print(f"재무정보 조회 오류: {e}")
-        return []
+        return {
+            'status': 'error',
+            'message': '재무정보를 처리하는 중 오류가 발생했습니다.',
+            'data': []
+        }
 
 def calculate_financial_ratios(financial_data):
     """재무비율 계산"""
@@ -320,16 +373,18 @@ def get_company_financial(corp_code):
     report_type = request.args.get('report_type', '11011')  # 사업보고서
     
     # DART API에서 재무데이터 조회
-    financial_data = get_financial_data(corp_code, year, report_type)
+    financial_result = get_financial_data(corp_code, year, report_type)
     
-    if not financial_data:
+    if financial_result['status'] == 'error':
         return jsonify({
-            'error': 'DART API에서 재무정보를 가져올 수 없습니다.',
+            'error': financial_result['message'],
             'financial_summary': [],
             'financial_ratios': {},
             'chart_data': {},
             'raw_data': []
         })
+
+    financial_data = financial_result['data']
     
     # 재무비율 계산
     ratios = calculate_financial_ratios(financial_data)
