@@ -6,17 +6,35 @@ from datetime import datetime
 import re
 import os
 from dotenv import load_dotenv
+from openai import OpenAI
 
 # 환경 변수 로드
-load_dotenv()
+print("현재 작업 디렉토리:", os.getcwd())
+print(".env 파일 존재 여부:", os.path.exists('.env'))
+load_dotenv(override=True)
 
 app = Flask(__name__)
 
 # OpenAI API 설정
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+print("OPENAI_API_KEY 존재 여부:", OPENAI_API_KEY is not None)
+print("OPENAI_API_KEY 길이:", len(OPENAI_API_KEY) if OPENAI_API_KEY else 0)
+
+# OpenAI 클라이언트 초기화
+openai_client = None
+if OPENAI_API_KEY:
+    try:
+        openai_client = OpenAI(api_key=OPENAI_API_KEY)
+        print("OpenAI 클라이언트 초기화 성공")
+    except Exception as e:
+        print(f"OpenAI 클라이언트 초기화 실패: {e}")
+else:
+    print("OpenAI API 키가 없어 클라이언트를 초기화하지 않습니다.")
 
 # DART Open API 설정
 DART_API_KEY = os.getenv('DART_API_KEY')
+print("DART_API_KEY 존재 여부:", DART_API_KEY is not None)
+print("DART_API_KEY 길이:", len(DART_API_KEY) if DART_API_KEY else 0)
 if not DART_API_KEY:
     print("Warning: DART_API_KEY not found in environment variables")
 DART_API_BASE_URL = "https://opendart.fss.or.kr/api"
@@ -77,6 +95,7 @@ def format_amount(amount):
 def get_financial_data(corp_code, bsns_year="2023", reprt_code="11011"):
     """DART API에서 재무정보 가져오기"""
     if not DART_API_KEY:
+        print("DART API 키가 없습니다!")
         return {
             'status': 'error',
             'message': 'DART API 키가 설정되지 않았습니다.',
@@ -84,7 +103,8 @@ def get_financial_data(corp_code, bsns_year="2023", reprt_code="11011"):
         }
 
     try:
-        url = f"{DART_API_BASE_URL}/fnlttSinglAcnt.json"
+        # DART API 엔드포인트 직접 호출
+        url = "https://opendart.fss.or.kr/api/fnlttSinglAcnt.json"
         params = {
             'crtfc_key': DART_API_KEY,
             'corp_code': corp_code,
@@ -92,9 +112,26 @@ def get_financial_data(corp_code, bsns_year="2023", reprt_code="11011"):
             'reprt_code': reprt_code
         }
         
+        print("\n=== DART API 요청 정보 ===")
+        print(f"URL: {url}")
+        print(f"API Key: {DART_API_KEY}")
+        print(f"기업코드: {corp_code}")
+        print(f"사업연도: {bsns_year}")
+        print(f"보고서 코드: {reprt_code}")
+        
+        # 실제 요청 URL 출력 (디버깅용)
+        full_url = f"{url}?crtfc_key={DART_API_KEY}&corp_code={corp_code}&bsns_year={bsns_year}&reprt_code={reprt_code}"
+        print(f"전체 URL: {full_url}")
+        print("========================\n")
+        
         response = requests.get(url, params=params, timeout=10)
+        print(f"응답 상태 코드: {response.status_code}")
+        print(f"실제 요청 URL: {response.url}")
+        
         response.raise_for_status()
         data = response.json()
+        
+        print(f"API 응답: {data.get('status')} - {DART_STATUS_CODES.get(data.get('status'), '알 수 없는 상태')}")
         
         status = data.get('status')
         if status == '000':
@@ -282,6 +319,13 @@ def get_chart_data(financial_data):
 def generate_financial_report(company_info, financial_data, ratios):
     """AI를 사용하여 재무 보고서 생성"""
     try:
+        if not openai_client:
+            print("OpenAI 클라이언트가 초기화되지 않았습니다.")
+            return {
+                'status': 'error',
+                'message': 'OpenAI API 키가 설정되지 않았거나 유효하지 않습니다.'
+            }
+
         # 프롬프트 구성
         prompt = f"""
 회사명: {company_info['corp_name']}
@@ -312,47 +356,36 @@ def generate_financial_report(company_info, financial_data, ratios):
 5. 향후 주의해야 할 리스크 요인
 """
 
-        # OpenAI API 직접 호출
-        headers = {
-            'Authorization': f'Bearer {OPENAI_API_KEY}',
-            'Content-Type': 'application/json'
-        }
-        
-        data = {
-            'model': 'gpt-4-turbo-preview',
-            'messages': [
-                {'role': 'system', 'content': '당신은 전문 재무분석가입니다. 주어진 재무정보를 바탕으로 객관적이고 통찰력 있는 분석 보고서를 작성해주세요.'},
-                {'role': 'user', 'content': prompt}
+        print("\n=== OpenAI SDK 요청 정보 ===")
+        print(f"클라이언트 상태: {'초기화됨' if openai_client else '초기화 안됨'}")
+        print(f"모델: gpt-3.5-turbo")
+        print("========================\n")
+
+        # OpenAI SDK 사용
+        response = openai_client.chat.completions.create(
+            model="gpt-3.5-turbo",  # 더 안정적인 모델 사용
+            messages=[
+                {"role": "system", "content": "당신은 전문 재무분석가입니다. 주어진 재무정보를 바탕으로 객관적이고 통찰력 있는 분석 보고서를 작성해주세요."},
+                {"role": "user", "content": prompt}
             ],
-            'temperature': 0.7,
-            'max_tokens': 2000
-        }
-        
-        response = requests.post(
-            'https://api.openai.com/v1/chat/completions',
-            headers=headers,
-            json=data,
-            timeout=30
+            temperature=0.7,
+            max_tokens=2000,
+            timeout=60  # 타임아웃을 60초로 증가
         )
         
-        if response.status_code == 200:
-            report = response.json()['choices'][0]['message']['content']
-            return {
-                'status': 'success',
-                'report': report
-            }
-        else:
-            print(f"OpenAI API 오류: {response.status_code}")
-            return {
-                'status': 'error',
-                'message': 'AI 보고서 생성 중 오류가 발생했습니다.'
-            }
+        print("OpenAI API 호출 성공")
+        
+        report = response.choices[0].message.content
+        return {
+            'status': 'success',
+            'report': report
+        }
             
     except Exception as e:
         print(f"AI 보고서 생성 오류: {e}")
         return {
             'status': 'error',
-            'message': '보고서 생성 중 오류가 발생했습니다.'
+            'message': f'AI 보고서 생성 중 오류가 발생했습니다: {str(e)}'
         }
 
 @app.route('/')
@@ -406,10 +439,14 @@ def get_company_financial(corp_code):
     if financial_result['status'] == 'error':
         return jsonify({
             'error': financial_result['message'],
-            'financial_summary': [],
             'financial_ratios': {},
             'chart_data': {},
-            'raw_data': []
+            'table_data': [],
+            'raw_data': [],
+            'ai_report': {
+                'status': 'error',
+                'message': '재무정보를 불러올 수 없어 AI 분석을 수행할 수 없습니다.'
+            }
         })
 
     financial_data = financial_result['data']
@@ -420,29 +457,84 @@ def get_company_financial(corp_code):
     # 차트용 데이터 생성
     chart_data = get_chart_data(financial_data)
     
-    # AI 보고서 생성
-    ai_report = generate_financial_report(dict(company), financial_data, ratios)
-    
     # 재무제표 테이블용 데이터
     table_data = []
     key_accounts = ['매출액', '영업이익', '당기순이익', '자산총계', '부채총계', '자본총계']
     
-    for item in financial_data['cfs']['bs']:
-        if item.get('account_nm') in key_accounts:
-            table_data.append({
-                'account_nm': item.get('account_nm'),
-                'thstrm_amount': format_amount(clean_number(item.get('thstrm_amount', 0))),
-                'frmtrm_amount': format_amount(clean_number(item.get('frmtrm_amount', 0))),
-                'bfefrmtrm_amount': format_amount(clean_number(item.get('bfefrmtrm_amount', 0)))
-            })
+    # 재무상태표와 손익계산서 모두에서 찾기
+    all_items = financial_data['cfs']['bs'] + financial_data['cfs']['is']
+    
+    for account in key_accounts:
+        for item in all_items:
+            if item.get('account_nm') == account:
+                table_data.append({
+                    'account_nm': item.get('account_nm'),
+                    'thstrm_amount': format_amount(clean_number(item.get('thstrm_amount', 0))),
+                    'frmtrm_amount': format_amount(clean_number(item.get('frmtrm_amount', 0))),
+                    'bfefrmtrm_amount': format_amount(clean_number(item.get('bfefrmtrm_amount', 0)))
+                })
+                break
     
     return jsonify({
         'financial_ratios': ratios,
         'chart_data': chart_data,
         'table_data': table_data,
-        'ai_report': ai_report,
-        'raw_data': financial_data['cfs']['bs'][:10]  # 상위 10개만
+        'raw_data': financial_data['cfs']['bs'][:10],  # 상위 10개만
+        'ai_report': {
+            'status': 'disabled',
+            'message': 'AI 분석 보고서 기능이 현재 비활성화되어 있습니다. OpenAI API 키를 설정해주세요.'
+        }
     })
+
+@app.route('/api/financial/<corp_code>/ai_report')
+def get_ai_report(corp_code):
+    """AI 분석 보고서 생성 API"""
+    try:
+        # 회사 정보 조회
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM companies WHERE corp_code = ?', (corp_code,))
+        company = cursor.fetchone()
+        conn.close()
+        
+        if not company:
+            return jsonify({
+                'status': 'error',
+                'message': '회사를 찾을 수 없습니다.'
+            }), 404
+        
+        # 비상장회사 체크
+        if not company['stock_code'] or not company['stock_code'].strip():
+            return jsonify({
+                'status': 'error',
+                'message': '비상장회사는 AI 분석 보고서를 제공하지 않습니다.'
+            }), 400
+        
+        year = request.args.get('year', '2023')
+        report_type = request.args.get('report_type', '11011')
+        
+        # 재무데이터 조회
+        financial_result = get_financial_data(corp_code, year, report_type)
+        if financial_result['status'] == 'error':
+            return jsonify({
+                'status': 'error',
+                'message': f'재무정보 조회 실패: {financial_result["message"]}'
+            }), 400
+            
+        financial_data = financial_result['data']
+        ratios = calculate_financial_ratios(financial_data)
+        
+        # AI 보고서 생성
+        ai_report = generate_financial_report(dict(company), financial_data, ratios)
+        
+        return jsonify(ai_report)
+        
+    except Exception as e:
+        print(f"AI 보고서 API 오류: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': 'AI 보고서 생성 중 서버 오류가 발생했습니다.'
+        }), 500
 
 @app.route('/api/companies')
 def get_companies():
