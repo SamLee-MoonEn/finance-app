@@ -1,6 +1,59 @@
-# 🏢 회사 재무정보 검색 시스템
+# 기업 재무정보 분석 서비스
 
-한국의 모든 법인 정보를 검색하고 **DART Open API를 통한 재무정보 시각화**가 가능한 웹 애플리케이션입니다.
+DART(전자공시시스템)의 기업 재무정보를 조회하고 분석하는 웹 애플리케이션입니다.
+
+## 주요 기능
+
+- 전체 기업 목록 조회 (112,476개 기업)
+- 상장/비상장 기업 구분 (상장 3,864개, 비상장 108,612개)
+- 기업명/기업코드 검색
+- 재무제표 조회 및 분석
+- AI 기반 재무 분석 보고서 생성
+- 재무 지표 시각화 (차트)
+
+## 기술 스택
+
+- Backend: Python, Flask
+- Database: SQLite
+- Frontend: HTML, CSS, JavaScript
+- API: DART Open API, OpenAI API
+- 차트: Chart.js
+
+## 환경 변수 설정
+
+다음 환경 변수들이 필요합니다:
+
+```
+DART_API_KEY=your_dart_api_key
+OPENAI_API_KEY=your_openai_api_key
+DATA_PATH=/data
+```
+
+## 설치 및 실행
+
+1. 가상환경 생성 및 활성화
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+.\.venv\Scripts\activate   # Windows
+```
+
+2. 패키지 설치
+```bash
+pip install -r requirements.txt
+```
+
+3. 서버 실행
+```bash
+python app.py
+```
+
+## API 엔드포인트
+
+- `/api/stats`: 전체 통계 정보
+- `/api/companies`: 기업 목록 조회
+- `/api/company/<corp_code>`: 특정 기업 정보 조회
+- `/api/financial/<corp_code>`: 재무정보 조회
 
 ## 📋 프로젝트 개요
 
