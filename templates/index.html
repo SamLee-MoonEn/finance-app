@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>회사 재무정보 검색</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .stats-section {
+            background: #f8f9fa;
+            padding: 20px 30px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+
+        .stat-card.listed {
+            border-left: 4px solid #28a745;
+        }
+
+        .stat-card.unlisted {
+            border-left: 4px solid #6c757d;
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+
+        .stat-number.listed {
+            color: #28a745;
+        }
+
+        .stat-number.unlisted {
+            color: #6c757d;
+        }
+
+        .stat-label {
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+
+        .search-section {
+            padding: 30px;
+            background: white;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 15px 20px;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .search-btn {
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: transform 0.2s;
+        }
+
+        .search-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .results-section {
+            margin-top: 20px;
+        }
+
+        .company-grid {
+            display: grid;
+            gap: 20px;
+        }
+
+        .company-card {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 10px;
+            padding: 20px;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .company-card.listed {
+            border-left: 4px solid #28a745;
+        }
+
+        .company-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            background: white;
+        }
+
+        .company-name {
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .company-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+
+        .company-detail {
+            background: white;
+            padding: 8px 12px;
+            border-radius: 5px;
+            border: 1px solid #e9ecef;
+        }
+
+        .company-detail.stock-code {
+            background: #d4edda;
+            border-color: #28a745;
+            color: #155724;
+            font-weight: bold;
+        }
+
+        .detail-label {
+            font-weight: bold;
+            color: #495057;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 30px;
+            padding: 20px;
+        }
+
+        .page-btn {
+            padding: 10px 15px;
+            border: 1px solid #e9ecef;
+            background: white;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .page-btn:hover, .page-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 1.1rem;
+            color: #6c757d;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border: 1px solid #f5c6cb;
+        }
+
+        .info-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #28a745;
+            color: white;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            margin-left: 10px;
+        }
+
+        .detail-info {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #667eea;
+            color: white;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            margin-left: 10px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .company-card:hover .detail-info {
+            opacity: 1;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .search-box {
+                flex-direction: column;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏢 회사 재무정보 검색</h1>
+            <p>한국의 모든 법인 정보를 검색하고 확인하세요</p>
+        </div>
+
+        <div class="stats-section">
+            <div class="stats-grid" id="statsGrid">
+                <div class="stat-card">
+                    <div class="stat-number" id="totalCompanies">-</div>
+                    <div class="stat-label">총 등록 회사</div>
+                </div>
+                <div class="stat-card listed">
+                    <div class="stat-number listed" id="listedCompanies">-</div>
+                    <div class="stat-label">상장 회사</div>
+                </div>
+                <div class="stat-card unlisted">
+                    <div class="stat-number unlisted" id="unlistedCompanies">-</div>
+                    <div class="stat-label">비상장 회사</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="search-section">
+            <div class="search-box">
+                <input 
+                    type="text" 
+                    class="search-input" 
+                    id="searchInput" 
+                    placeholder="회사명, 법인코드, 주식코드로 검색하세요..."
+                    onkeypress="handleKeyPress(event)"
+                >
+                <button class="search-btn" onclick="searchCompanies()">🔍 검색</button>
+            </div>
+
+            <div class="results-section">
+                <div id="loadingDiv" class="loading" style="display: none;">
+                    검색 중입니다...
+                </div>
+                <div id="errorDiv" class="error" style="display: none;"></div>
+                <div id="resultsDiv" class="company-grid"></div>
+                <div id="paginationDiv" class="pagination"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        let currentSearch = '';
+
+        // 페이지 로드 시 통계 정보 가져오기
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStats();
+            loadCompanies();
+        });
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                
+                document.getElementById('totalCompanies').textContent = data.total_companies.toLocaleString();
+                document.getElementById('listedCompanies').textContent = data.listed_companies.toLocaleString();
+                document.getElementById('unlistedCompanies').textContent = data.unlisted_companies.toLocaleString();
+            } catch (error) {
+                console.error('통계 정보 로드 오류:', error);
+            }
+        }
+
+        async function loadCompanies(page = 1, search = '') {
+            const loadingDiv = document.getElementById('loadingDiv');
+            const errorDiv = document.getElementById('errorDiv');
+            const resultsDiv = document.getElementById('resultsDiv');
+            
+            loadingDiv.style.display = 'block';
+            errorDiv.style.display = 'none';
+            resultsDiv.innerHTML = '';
+
+            try {
+                const params = new URLSearchParams({
+                    page: page,
+                    per_page: 20,
+                    search: search
+                });
+                
+                const response = await fetch(`/api/companies?${params}`);
+                const data = await response.json();
+                
+                loadingDiv.style.display = 'none';
+                
+                if (data.companies && data.companies.length > 0) {
+                    displayCompanies(data.companies);
+                    displayPagination(data);
+                } else {
+                    resultsDiv.innerHTML = '<div class="loading">검색 결과가 없습니다.</div>';
+                }
+            } catch (error) {
+                loadingDiv.style.display = 'none';
+                errorDiv.style.display = 'block';
+                errorDiv.textContent = '데이터를 불러오는 중 오류가 발생했습니다.';
+                console.error('회사 정보 로드 오류:', error);
+            }
+        }
+
+        function displayCompanies(companies) {
+            const resultsDiv = document.getElementById('resultsDiv');
+            
+            resultsDiv.innerHTML = companies.map(company => {
+                const hasStockCode = company.stock_code && company.stock_code.trim() !== '';
+                const listedClass = hasStockCode ? 'listed' : '';
+                const stockBadge = hasStockCode ? '<span class="info-badge">상장</span>' : '';
+                
+                return `
+                <div class="company-card ${listedClass}" onclick="goToCompanyDetail('${company.corp_code}')">
+                    <div class="company-name">
+                        ${company.corp_name || '회사명 없음'}
+                        ${stockBadge}
+                        <span class="detail-info">📊 재무정보 보기</span>
+                    </div>
+                    <div class="company-details">
+                        <div class="company-detail">
+                            <span class="detail-label">법인코드:</span> ${company.corp_code || '-'}
+                        </div>
+                        <div class="company-detail">
+                            <span class="detail-label">영문명:</span> ${company.corp_name_eng || '-'}
+                        </div>
+                        <div class="company-detail ${hasStockCode ? 'stock-code' : ''}">
+                            <span class="detail-label">주식코드:</span> ${hasStockCode ? company.stock_code : '비상장'}
+                        </div>
+                        <div class="company-detail">
+                            <span class="detail-label">수정일:</span> ${company.modify_date || '-'}
+                        </div>
+                    </div>
+                </div>
+            `}).join('');
+        }
+
+        function displayPagination(data) {
+            const paginationDiv = document.getElementById('paginationDiv');
+            
+            if (data.total_pages <= 1) {
+                paginationDiv.innerHTML = '';
+                return;
+            }
+            
+            let pagination = '';
+            
+            // 이전 버튼
+            if (data.page > 1) {
+                pagination += `<button class="page-btn" onclick="changePage(${data.page - 1})">이전</button>`;
+            }
+            
+            // 페이지 번호들
+            const startPage = Math.max(1, data.page - 2);
+            const endPage = Math.min(data.total_pages, data.page + 2);
+            
+            for (let i = startPage; i <= endPage; i++) {
+                const activeClass = i === data.page ? 'active' : '';
+                pagination += `<button class="page-btn ${activeClass}" onclick="changePage(${i})">${i}</button>`;
+            }
+            
+            // 다음 버튼
+            if (data.page < data.total_pages) {
+                pagination += `<button class="page-btn" onclick="changePage(${data.page + 1})">다음</button>`;
+            }
+            
+            paginationDiv.innerHTML = pagination;
+        }
+
+        function searchCompanies() {
+            const searchInput = document.getElementById('searchInput');
+            currentSearch = searchInput.value.trim();
+            currentPage = 1;
+            loadCompanies(currentPage, currentSearch);
+        }
+
+        function changePage(page) {
+            currentPage = page;
+            loadCompanies(currentPage, currentSearch);
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                searchCompanies();
+            }
+        }
+
+        // 회사 상세 페이지로 이동
+        function goToCompanyDetail(corpCode) {
+            window.location.href = `/company/${corpCode}`;
+        }
+    </script>
+</body>
+</html> 
