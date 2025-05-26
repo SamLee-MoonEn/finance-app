@@ -22,7 +22,16 @@ DART_API_BASE_URL = "https://opendart.fss.or.kr/api"
 
 def get_db_connection():
     """데이터베이스 연결"""
-    conn = sqlite3.connect('companies.db')
+    db_path = os.path.join(os.getenv('DATA_PATH', ''), 'companies.db')
+    if not os.path.exists(db_path):
+        # 데이터베이스 파일이 없으면 현재 디렉토리의 파일을 복사
+        import shutil
+        current_db = 'companies.db'
+        if os.path.exists(current_db):
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            shutil.copy2(current_db, db_path)
+    
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
