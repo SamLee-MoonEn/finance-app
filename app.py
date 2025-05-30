@@ -9,63 +9,79 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 # 환경 변수 로드
-print("현재 작업 디렉토리:", os.getcwd())
-print(".env 파일 존재 여부:", os.path.exists('.env'))
+print("현재 작업 디렉토리:", os.getcwd(), flush=True)
+print(".env 파일 존재 여부:", os.path.exists('.env'), flush=True)
 
 # Render에서는 .env 파일이 없으므로 조건부로 로드
 if os.path.exists('.env'):
     load_dotenv(override=True)
-    print(".env 파일을 로드했습니다.")
+    print(".env 파일을 로드했습니다.", flush=True)
 else:
-    print(".env 파일이 없습니다. 시스템 환경 변수를 사용합니다.")
+    print(".env 파일이 없습니다. 시스템 환경 변수를 사용합니다.", flush=True)
 
 # 모든 환경 변수 출력 (디버깅용)
-print("모든 환경 변수:")
+print("모든 환경 변수:", flush=True)
 for key, value in os.environ.items():
     if 'API' in key or 'KEY' in key:
         # API 키는 보안상 일부만 표시
         if value:
-            print(f"  {key}: {value[:10]}...{value[-4:] if len(value) > 14 else value}")
+            print(f"  {key}: {value[:10]}...{value[-4:] if len(value) > 14 else value}", flush=True)
         else:
-            print(f"  {key}: None")
+            print(f"  {key}: None", flush=True)
 
 app = Flask(__name__)
 
 # OpenAI API 설정
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-print("OPENAI_API_KEY 존재 여부:", OPENAI_API_KEY is not None)
-print("OPENAI_API_KEY 길이:", len(OPENAI_API_KEY) if OPENAI_API_KEY else 0)
+print("OPENAI_API_KEY 존재 여부:", OPENAI_API_KEY is not None, flush=True)
+print("OPENAI_API_KEY 길이:", len(OPENAI_API_KEY) if OPENAI_API_KEY else 0, flush=True)
+
+# 환경 변수 이름 확인 (대소문자 구분)
+print("=== OPENAI 관련 환경 변수 확인 ===", flush=True)
+openai_related_vars = [key for key in os.environ.keys() if 'OPENAI' in key.upper()]
+print(f"OPENAI 관련 환경 변수들: {openai_related_vars}", flush=True)
+
+# 일반적인 오타들 확인
+possible_keys = ['OPENAI_API_KEY', 'OPENAPI_KEY', 'OPEN_AI_API_KEY', 'OPENAI_KEY']
+for key in possible_keys:
+    value = os.getenv(key)
+    if value:
+        print(f"  {key}: 발견됨 (길이: {len(value)})", flush=True)
+    else:
+        print(f"  {key}: 없음", flush=True)
+print("=====================================", flush=True)
+
 if OPENAI_API_KEY:
-    print("OPENAI_API_KEY 시작 부분:", OPENAI_API_KEY[:10] + "..." if len(OPENAI_API_KEY) > 10 else OPENAI_API_KEY)
+    print("OPENAI_API_KEY 시작 부분:", OPENAI_API_KEY[:10] + "..." if len(OPENAI_API_KEY) > 10 else OPENAI_API_KEY, flush=True)
 
 # OpenAI 클라이언트 초기화
 openai_client = None
 if OPENAI_API_KEY:
     try:
-        print(f"OpenAI API 키로 클라이언트 초기화 시도 중... (키 길이: {len(OPENAI_API_KEY)})")
+        print(f"OpenAI API 키로 클라이언트 초기화 시도 중... (키 길이: {len(OPENAI_API_KEY)})", flush=True)
         openai_client = OpenAI(api_key=OPENAI_API_KEY)
-        print("✅ OpenAI 클라이언트 초기화 성공")
+        print("✅ OpenAI 클라이언트 초기화 성공", flush=True)
         
         # 간단한 API 테스트 (선택사항)
         try:
             test_response = openai_client.models.list()
-            print("✅ OpenAI API 연결 테스트 성공")
+            print("✅ OpenAI API 연결 테스트 성공", flush=True)
         except Exception as test_e:
-            print(f"⚠️ OpenAI API 연결 테스트 실패: {test_e}")
+            print(f"⚠️ OpenAI API 연결 테스트 실패: {test_e}", flush=True)
             
     except Exception as e:
-        print(f"❌ OpenAI 클라이언트 초기화 실패: {e}")
+        print(f"❌ OpenAI 클라이언트 초기화 실패: {e}", flush=True)
         openai_client = None
 else:
-    print("❌ OpenAI API 키가 없어 클라이언트를 초기화하지 않습니다.")
-    print("환경 변수 OPENAI_API_KEY를 확인해주세요.")
+    print("❌ OpenAI API 키가 없어 클라이언트를 초기화하지 않습니다.", flush=True)
+    print("환경 변수 OPENAI_API_KEY를 확인해주세요.", flush=True)
 
 # DART Open API 설정
 DART_API_KEY = os.getenv('DART_API_KEY')
-print("DART_API_KEY 존재 여부:", DART_API_KEY is not None)
-print("DART_API_KEY 길이:", len(DART_API_KEY) if DART_API_KEY else 0)
+print("DART_API_KEY 존재 여부:", DART_API_KEY is not None, flush=True)
+print("DART_API_KEY 길이:", len(DART_API_KEY) if DART_API_KEY else 0, flush=True)
 if not DART_API_KEY:
-    print("Warning: DART_API_KEY not found in environment variables")
+    print("Warning: DART_API_KEY not found in environment variables", flush=True)
 DART_API_BASE_URL = "https://opendart.fss.or.kr/api"
 
 # API 응답 상태 코드
@@ -124,7 +140,7 @@ def format_amount(amount):
 def get_financial_data(corp_code, bsns_year="2023", reprt_code="11011"):
     """DART API에서 재무정보 가져오기"""
     if not DART_API_KEY:
-        print("DART API 키가 없습니다!")
+        print("DART API 키가 없습니다!", flush=True)
         return {
             'status': 'error',
             'message': 'DART API 키가 설정되지 않았습니다.',
@@ -141,26 +157,26 @@ def get_financial_data(corp_code, bsns_year="2023", reprt_code="11011"):
             'reprt_code': reprt_code
         }
         
-        print("\n=== DART API 요청 정보 ===")
-        print(f"URL: {url}")
-        print(f"API Key: {DART_API_KEY}")
-        print(f"기업코드: {corp_code}")
-        print(f"사업연도: {bsns_year}")
-        print(f"보고서 코드: {reprt_code}")
+        print("\n=== DART API 요청 정보 ===", flush=True)
+        print(f"URL: {url}", flush=True)
+        print(f"API Key: {DART_API_KEY}", flush=True)
+        print(f"기업코드: {corp_code}", flush=True)
+        print(f"사업연도: {bsns_year}", flush=True)
+        print(f"보고서 코드: {reprt_code}", flush=True)
         
         # 실제 요청 URL 출력 (디버깅용)
         full_url = f"{url}?crtfc_key={DART_API_KEY}&corp_code={corp_code}&bsns_year={bsns_year}&reprt_code={reprt_code}"
-        print(f"전체 URL: {full_url}")
-        print("========================\n")
+        print(f"전체 URL: {full_url}", flush=True)
+        print("========================\n", flush=True)
         
         response = requests.get(url, params=params, timeout=10)
-        print(f"응답 상태 코드: {response.status_code}")
-        print(f"실제 요청 URL: {response.url}")
+        print(f"응답 상태 코드: {response.status_code}", flush=True)
+        print(f"실제 요청 URL: {response.url}", flush=True)
         
         response.raise_for_status()
         data = response.json()
         
-        print(f"API 응답: {data.get('status')} - {DART_STATUS_CODES.get(data.get('status'), '알 수 없는 상태')}")
+        print(f"API 응답: {data.get('status')} - {DART_STATUS_CODES.get(data.get('status'), '알 수 없는 상태')}", flush=True)
         
         status = data.get('status')
         if status == '000':
@@ -187,7 +203,7 @@ def get_financial_data(corp_code, bsns_year="2023", reprt_code="11011"):
             }
         else:
             error_message = DART_STATUS_CODES.get(status, '알 수 없는 오류')
-            print(f"DART API 오류 ({status}): {error_message}")
+            print(f"DART API 오류 ({status}): {error_message}", flush=True)
             return {
                 'status': 'error',
                 'message': f"DART API 오류: {error_message}",
@@ -195,21 +211,21 @@ def get_financial_data(corp_code, bsns_year="2023", reprt_code="11011"):
             }
             
     except requests.exceptions.Timeout:
-        print("DART API 요청 시간 초과")
+        print("DART API 요청 시간 초과", flush=True)
         return {
             'status': 'error',
             'message': 'DART API 요청 시간이 초과되었습니다.',
             'data': []
         }
     except requests.exceptions.RequestException as e:
-        print(f"DART API 요청 오류: {e}")
+        print(f"DART API 요청 오류: {e}", flush=True)
         return {
             'status': 'error',
             'message': 'DART API 요청 중 오류가 발생했습니다.',
             'data': []
         }
     except Exception as e:
-        print(f"재무정보 조회 오류: {e}")
+        print(f"재무정보 조회 오류: {e}", flush=True)
         return {
             'status': 'error',
             'message': '재무정보를 처리하는 중 오류가 발생했습니다.',
@@ -274,7 +290,7 @@ def calculate_financial_ratios(financial_data):
         ratios['total_equity_formatted'] = format_amount(equity['current'])
             
     except Exception as e:
-        print(f"재무비율 계산 오류: {e}")
+        print(f"재무비율 계산 오류: {e}", flush=True)
     
     return ratios
 
@@ -341,7 +357,7 @@ def get_chart_data(financial_data):
         }
         
     except Exception as e:
-        print(f"차트 데이터 생성 오류: {e}")
+        print(f"차트 데이터 생성 오류: {e}", flush=True)
     
     return chart_data
 
@@ -349,7 +365,7 @@ def generate_financial_report(company_info, financial_data, ratios):
     """AI를 사용하여 재무 보고서 생성"""
     try:
         if not openai_client:
-            print("OpenAI 클라이언트가 초기화되지 않았습니다.")
+            print("OpenAI 클라이언트가 초기화되지 않았습니다.", flush=True)
             return {
                 'status': 'error',
                 'message': 'OpenAI API 키가 설정되지 않았거나 유효하지 않습니다.'
@@ -385,10 +401,10 @@ def generate_financial_report(company_info, financial_data, ratios):
 5. 향후 주의해야 할 리스크 요인
 """
 
-        print("\n=== OpenAI SDK 요청 정보 ===")
-        print(f"클라이언트 상태: {'초기화됨' if openai_client else '초기화 안됨'}")
-        print(f"모델: gpt-3.5-turbo")
-        print("========================\n")
+        print("\n=== OpenAI SDK 요청 정보 ===", flush=True)
+        print(f"클라이언트 상태: {'초기화됨' if openai_client else '초기화 안됨'}", flush=True)
+        print(f"모델: gpt-3.5-turbo", flush=True)
+        print("========================\n", flush=True)
 
         # OpenAI SDK 사용
         response = openai_client.chat.completions.create(
@@ -402,7 +418,7 @@ def generate_financial_report(company_info, financial_data, ratios):
             timeout=60  # 타임아웃을 60초로 증가
         )
         
-        print("OpenAI API 호출 성공")
+        print("OpenAI API 호출 성공", flush=True)
         
         report = response.choices[0].message.content
         return {
@@ -411,7 +427,7 @@ def generate_financial_report(company_info, financial_data, ratios):
         }
             
     except Exception as e:
-        print(f"AI 보고서 생성 오류: {e}")
+        print(f"AI 보고서 생성 오류: {e}", flush=True)
         return {
             'status': 'error',
             'message': f'AI 보고서 생성 중 오류가 발생했습니다: {str(e)}'
@@ -568,7 +584,7 @@ def get_ai_report(corp_code):
         return jsonify(ai_report)
         
     except Exception as e:
-        print(f"AI 보고서 API 오류: {e}")
+        print(f"AI 보고서 API 오류: {e}", flush=True)
         return jsonify({
             'status': 'error',
             'message': 'AI 보고서 생성 중 서버 오류가 발생했습니다.'
