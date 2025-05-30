@@ -9,72 +9,126 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 # 환경 변수 로드
+print("=== 환경 변수 로딩 시작 ===", flush=True)
 print("현재 작업 디렉토리:", os.getcwd(), flush=True)
-print(".env 파일 존재 여부:", os.path.exists('.env'), flush=True)
+print("Python 실행 환경:", os.environ.get('PYTHON_VERSION', 'Unknown'), flush=True)
 
-# Render에서는 .env 파일이 없으므로 조건부로 로드
+# 로컬 개발환경에서만 .env 파일 로드
 if os.path.exists('.env'):
     load_dotenv(override=True)
-    print(".env 파일을 로드했습니다.", flush=True)
+    print("✅ .env 파일을 로드했습니다 (로컬 개발환경)", flush=True)
 else:
-    print(".env 파일이 없습니다. 시스템 환경 변수를 사용합니다.", flush=True)
+    print("ℹ️ .env 파일이 없습니다. 시스템 환경 변수를 사용합니다 (Render 배포환경)", flush=True)
 
-# 모든 환경 변수 출력 (디버깅용)
-print("모든 환경 변수:", flush=True)
-for key, value in os.environ.items():
-    if 'API' in key or 'KEY' in key:
-        # API 키는 보안상 일부만 표시
-        if value:
-            print(f"  {key}: {value[:10]}...{value[-4:] if len(value) > 14 else value}", flush=True)
-        else:
-            print(f"  {key}: None", flush=True)
+# 환경 변수 직접 확인
+print("\n=== 중요 환경 변수 확인 ===", flush=True)
+
+# 1. OpenAI API 키 관련 환경 변수들 확인
+openai_keys_to_check = [
+    'OPENAI_API_KEY',
+    'OPENAPI_KEY', 
+    'OPEN_AI_API_KEY',
+    'OPENAI_KEY',
+    'OPENAI_SECRET_KEY'
+]
+
+print("OpenAI 관련 환경 변수 검사:", flush=True)
+found_openai_key = None
+for key_name in openai_keys_to_check:
+    value = os.environ.get(key_name)
+    if value:
+        print(f"  ✅ {key_name}: 발견됨 (길이: {len(value)}, 시작: {value[:15]}...)", flush=True)
+        if not found_openai_key:  # 첫 번째로 발견된 키 사용
+            found_openai_key = value
+    else:
+        print(f"  ❌ {key_name}: 없음", flush=True)
+
+# 2. 모든 환경 변수 중 API/KEY 포함된 것들 확인
+print("\n모든 API/KEY 관련 환경 변수:", flush=True)
+api_env_vars = {k: v for k, v in os.environ.items() if any(keyword in k.upper() for keyword in ['API', 'KEY', 'SECRET', 'TOKEN'])}
+for key, value in api_env_vars.items():
+    if value:
+        # 보안을 위해 값의 일부만 표시
+        masked_value = f"{value[:10]}...{value[-4:]}" if len(value) > 14 else f"{value[:6]}..."
+        print(f"  {key}: {masked_value}", flush=True)
+    else:
+        print(f"  {key}: (빈 값)", flush=True)
+
+print("=== 환경 변수 로딩 완료 ===\n", flush=True)
 
 app = Flask(__name__)
 
-# OpenAI API 설정
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+# OpenAI API 설정 - 발견된 키 사용
+OPENAI_API_KEY = found_openai_key or os.getenv('OPENAI_API_KEY')
+print("=== OpenAI API 키 설정 ===", flush=True)
 print("OPENAI_API_KEY 존재 여부:", OPENAI_API_KEY is not None, flush=True)
-print("OPENAI_API_KEY 길이:", len(OPENAI_API_KEY) if OPENAI_API_KEY else 0, flush=True)
-
-# 환경 변수 이름 확인 (대소문자 구분)
-print("=== OPENAI 관련 환경 변수 확인 ===", flush=True)
-openai_related_vars = [key for key in os.environ.keys() if 'OPENAI' in key.upper()]
-print(f"OPENAI 관련 환경 변수들: {openai_related_vars}", flush=True)
-
-# 일반적인 오타들 확인
-possible_keys = ['OPENAI_API_KEY', 'OPENAPI_KEY', 'OPEN_AI_API_KEY', 'OPENAI_KEY']
-for key in possible_keys:
-    value = os.getenv(key)
-    if value:
-        print(f"  {key}: 발견됨 (길이: {len(value)})", flush=True)
-    else:
-        print(f"  {key}: 없음", flush=True)
-print("=====================================", flush=True)
-
 if OPENAI_API_KEY:
-    print("OPENAI_API_KEY 시작 부분:", OPENAI_API_KEY[:10] + "..." if len(OPENAI_API_KEY) > 10 else OPENAI_API_KEY, flush=True)
+    print("OPENAI_API_KEY 길이:", len(OPENAI_API_KEY), flush=True)
+    print("OPENAI_API_KEY 형식 확인:", flush=True)
+    if OPENAI_API_KEY.startswith('sk-'):
+        print("  ✅ 올바른 OpenAI API 키 형식 (sk-로 시작)", flush=True)
+    elif OPENAI_API_KEY.startswith('sk-proj-'):
+        print("  ✅ 올바른 OpenAI 프로젝트 API 키 형식 (sk-proj-로 시작)", flush=True)
+    else:
+        print("  ⚠️ 비정상적인 API 키 형식 (sk- 또는 sk-proj-로 시작하지 않음)", flush=True)
+    print("OPENAI_API_KEY 시작 부분:", OPENAI_API_KEY[:15] + "..." if len(OPENAI_API_KEY) > 15 else OPENAI_API_KEY, flush=True)
+else:
+    print("❌ OPENAI_API_KEY를 찾을 수 없습니다!", flush=True)
+    print("Render 대시보드에서 Environment Variables 설정을 확인해주세요.", flush=True)
+print("========================\n", flush=True)
 
 # OpenAI 클라이언트 초기화
+print("=== OpenAI 클라이언트 초기화 ===", flush=True)
 openai_client = None
-if OPENAI_API_KEY:
+
+if OPENAI_API_KEY and len(OPENAI_API_KEY.strip()) > 0:
     try:
-        print(f"OpenAI API 키로 클라이언트 초기화 시도 중... (키 길이: {len(OPENAI_API_KEY)})", flush=True)
-        openai_client = OpenAI(api_key=OPENAI_API_KEY)
-        print("✅ OpenAI 클라이언트 초기화 성공", flush=True)
+        print(f"🔄 OpenAI 클라이언트 초기화 시도 중...", flush=True)
+        print(f"   API 키 길이: {len(OPENAI_API_KEY)}", flush=True)
+        print(f"   API 키 형식: {OPENAI_API_KEY[:20]}...", flush=True)
         
-        # 간단한 API 테스트 (선택사항)
+        # OpenAI 클라이언트 생성
+        openai_client = OpenAI(api_key=OPENAI_API_KEY.strip())
+        print("✅ OpenAI 클라이언트 객체 생성 성공", flush=True)
+        
+        # API 연결 테스트 (간단한 모델 목록 조회)
         try:
-            test_response = openai_client.models.list()
-            print("✅ OpenAI API 연결 테스트 성공", flush=True)
+            print("🔄 OpenAI API 연결 테스트 중...", flush=True)
+            models_response = openai_client.models.list()
+            if models_response and hasattr(models_response, 'data'):
+                available_models = [model.id for model in models_response.data[:3]]  # 처음 3개만
+                print(f"✅ OpenAI API 연결 테스트 성공! 사용 가능한 모델: {available_models}", flush=True)
+            else:
+                print("✅ OpenAI API 연결 성공 (모델 목록 확인 불가)", flush=True)
         except Exception as test_e:
-            print(f"⚠️ OpenAI API 연결 테스트 실패: {test_e}", flush=True)
+            print(f"⚠️ OpenAI API 연결 테스트 실패: {str(test_e)}", flush=True)
+            print("   클라이언트는 생성되었지만 API 호출에 문제가 있을 수 있습니다.", flush=True)
+            # API 테스트 실패해도 클라이언트는 유지 (실제 사용 시 재시도 가능)
             
     except Exception as e:
-        print(f"❌ OpenAI 클라이언트 초기화 실패: {e}", flush=True)
+        print(f"❌ OpenAI 클라이언트 초기화 실패: {str(e)}", flush=True)
+        print(f"   오류 타입: {type(e).__name__}", flush=True)
         openai_client = None
+        
+        # 일반적인 오류 원인 안내
+        if "api_key" in str(e).lower():
+            print("   💡 API 키 관련 오류입니다. 키 형식을 확인해주세요.", flush=True)
+        elif "network" in str(e).lower() or "connection" in str(e).lower():
+            print("   💡 네트워크 연결 오류입니다. 인터넷 연결을 확인해주세요.", flush=True)
+        else:
+            print("   💡 예상치 못한 오류입니다. OpenAI 서비스 상태를 확인해주세요.", flush=True)
+            
 else:
-    print("❌ OpenAI API 키가 없어 클라이언트를 초기화하지 않습니다.", flush=True)
-    print("환경 변수 OPENAI_API_KEY를 확인해주세요.", flush=True)
+    print("❌ OpenAI API 키가 없거나 비어있어 클라이언트를 초기화하지 않습니다.", flush=True)
+    print("   Render 환경 변수 'OPENAI_API_KEY'를 확인해주세요.", flush=True)
+
+# 최종 상태 출력
+if openai_client:
+    print("🎉 OpenAI 클라이언트 준비 완료! AI 분석 보고서 기능이 활성화됩니다.", flush=True)
+else:
+    print("💔 OpenAI 클라이언트 초기화 실패. AI 분석 보고서 기능이 비활성화됩니다.", flush=True)
+
+print("=== OpenAI 클라이언트 초기화 완료 ===\n", flush=True)
 
 # DART Open API 설정
 DART_API_KEY = os.getenv('DART_API_KEY')
