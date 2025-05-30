@@ -79,6 +79,15 @@ print("========================\n", flush=True)
 
 # OpenAI 클라이언트 초기화
 print("=== OpenAI 클라이언트 초기화 ===", flush=True)
+
+# OpenAI 라이브러리 버전 확인
+try:
+    import openai
+    openai_version = getattr(openai, '__version__', 'Unknown')
+    print(f"📦 OpenAI 라이브러리 버전: {openai_version}", flush=True)
+except Exception as ve:
+    print(f"⚠️ OpenAI 라이브러리 버전 확인 실패: {str(ve)}", flush=True)
+
 openai_client = None
 
 if OPENAI_API_KEY and len(OPENAI_API_KEY.strip()) > 0:
@@ -88,8 +97,24 @@ if OPENAI_API_KEY and len(OPENAI_API_KEY.strip()) > 0:
         print(f"   API 키 형식: {OPENAI_API_KEY[:20]}...", flush=True)
         
         # OpenAI 클라이언트 생성
-        openai_client = OpenAI(api_key=OPENAI_API_KEY.strip())
-        print("✅ OpenAI 클라이언트 객체 생성 성공", flush=True)
+        try:
+            # 기본적인 방식으로 클라이언트 생성 (최대 호환성)
+            openai_client = OpenAI(api_key=OPENAI_API_KEY.strip())
+            print("✅ OpenAI 클라이언트 객체 생성 성공", flush=True)
+        except TypeError as te:
+            # 구버전 호환성을 위한 대체 방식
+            print(f"⚠️ 기본 방식 실패, 호환성 모드로 재시도: {str(te)}", flush=True)
+            try:
+                import openai
+                openai.api_key = OPENAI_API_KEY.strip()
+                # 구버전 방식으로 설정
+                print("✅ OpenAI 클라이언트 호환성 모드로 설정 완료", flush=True)
+                # 새로운 방식으로 다시 시도
+                openai_client = OpenAI(api_key=OPENAI_API_KEY.strip())
+                print("✅ OpenAI 클라이언트 객체 생성 성공 (호환성 모드)", flush=True)
+            except Exception as ce:
+                print(f"❌ 호환성 모드도 실패: {str(ce)}", flush=True)
+                raise ce
         
         # API 연결 테스트 (간단한 모델 목록 조회)
         try:
