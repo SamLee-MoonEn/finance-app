@@ -440,6 +440,81 @@ def get_chart_data(financial_data):
     
     return chart_data
 
+def get_enhanced_company_info(corp_code):
+    """기업 정보를 상세히 조회하고 분석용 데이터를 준비"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM companies WHERE corp_code = ?', (corp_code,))
+        company = cursor.fetchone()
+        conn.close()
+        
+        if not company:
+            return None
+            
+        company_dict = dict(company)
+        
+        # 기업 규모 분류 (자본금 기준)
+        capital = clean_number(company_dict.get('capital', 0))
+        if capital >= 50000000000:  # 500억 이상
+            company_size = "대기업"
+        elif capital >= 10000000000:  # 100억 이상
+            company_size = "중견기업"
+        elif capital >= 1000000000:  # 10억 이상
+            company_size = "중소기업"
+        else:
+            company_size = "소기업"
+            
+        # 상장 여부 확인
+        listing_status = "상장기업" if company_dict.get('stock_code') and company_dict.get('stock_code').strip() else "비상장기업"
+        
+        # 업종 정보 정리
+        industry = company_dict.get('industry', '정보 없음')
+        if industry == '정보 없음' or not industry:
+            # 회사명에서 업종 추정 시도
+            corp_name = company_dict.get('corp_name', '')
+            if any(keyword in corp_name for keyword in ['전자', '반도체', 'IT', '소프트웨어']):
+                industry = "IT/전자"
+            elif any(keyword in corp_name for keyword in ['건설', '건축', '토목']):
+                industry = "건설업"
+            elif any(keyword in corp_name for keyword in ['금융', '은행', '증권', '보험']):
+                industry = "금융업"
+            elif any(keyword in corp_name for keyword in ['제약', '바이오', '의료']):
+                industry = "제약/바이오"
+            elif any(keyword in corp_name for keyword in ['화학', '석유', '정유']):
+                industry = "화학/석유"
+            else:
+                industry = "기타 업종"
+        
+        # 설립연도 계산
+        est_date = company_dict.get('est_date', '')
+        company_age = "정보 없음"
+        if est_date:
+            try:
+                from datetime import datetime
+                if len(est_date) >= 4:
+                    est_year = int(est_date[:4])
+                    current_year = datetime.now().year
+                    company_age = f"{current_year - est_year}년"
+            except:
+                pass
+        
+        # 강화된 기업 정보
+        enhanced_info = {
+            **company_dict,
+            'company_size': company_size,
+            'listing_status': listing_status,
+            'industry_classified': industry,
+            'company_age': company_age,
+            'capital_formatted': format_amount(capital) if capital > 0 else "정보 없음"
+        }
+        
+        return enhanced_info
+        
+    except Exception as e:
+        print(f"기업 정보 조회 오류: {e}", flush=True)
+        return None
+
 def generate_financial_report(company_info, financial_data, ratios):
     """AI를 사용하여 재무 보고서 생성"""
     try:
@@ -450,34 +525,78 @@ def generate_financial_report(company_info, financial_data, ratios):
                 'message': 'OpenAI API 키가 설정되지 않았거나 유효하지 않습니다.'
             }
 
-        # 프롬프트 구성
+        # 업종별 특성 분석을 위한 추가 정보
+        industry_context = ""
+        industry = company_info.get('industry_classified', '기타')
+        
+        if "IT" in industry or "전자" in industry:
+            industry_context = "IT/전자 업종은 기술 혁신과 R&D 투자가 중요하며, 빠른 시장 변화에 대응력이 핵심입니다."
+        elif "건설" in industry:
+            industry_context = "건설업은 경기 민감도가 높고, 프로젝트 기반 매출로 인한 변동성이 큰 특징이 있습니다."
+        elif "금융" in industry:
+            industry_context = "금융업은 금리 변동과 경제 상황에 민감하며, 자본 적정성과 리스크 관리가 중요합니다."
+        elif "제약" in industry or "바이오" in industry:
+            industry_context = "제약/바이오 업종은 높은 R&D 비용과 긴 개발 기간, 규제 리스크가 특징입니다."
+        elif "화학" in industry or "석유" in industry:
+            industry_context = "화학/석유 업종은 원자재 가격 변동과 환경 규제에 민감한 특성을 가집니다."
+        else:
+            industry_context = "해당 업종의 특성을 고려한 분석이 필요합니다."
+
+        # 강화된 프롬프트 구성
         prompt = f"""
-회사명: {company_info['corp_name']}
-업종: {company_info.get('industry', '정보 없음')}
+=== 기업 기본 정보 ===
+• 회사명: {company_info['corp_name']}
+• 기업코드: {company_info['corp_code']}
+• 업종: {company_info.get('industry_classified', '정보 없음')}
+• 기업 규모: {company_info.get('company_size', '정보 없음')}
+• 상장 여부: {company_info.get('listing_status', '정보 없음')}
+• 설립 연수: {company_info.get('company_age', '정보 없음')}
+• 자본금: {company_info.get('capital_formatted', '정보 없음')}
+{f"• 주식코드: {company_info['stock_code']}" if company_info.get('stock_code') else ""}
 
-주요 재무 지표:
-- 매출액: {ratios.get('revenue_formatted', '정보 없음')}
-- 영업이익: {ratios.get('operating_profit_formatted', '정보 없음')}
-- 당기순이익: {ratios.get('net_income_formatted', '정보 없음')}
-- 자산총계: {ratios.get('total_assets_formatted', '정보 없음')}
-- 부채총계: {ratios.get('total_liabilities_formatted', '정보 없음')}
-- 자본총계: {ratios.get('total_equity_formatted', '정보 없음')}
+=== 업종 특성 ===
+{industry_context}
 
-재무비율:
-- 영업이익률: {ratios.get('operating_margin', '정보 없음')}%
-- 순이익률: {ratios.get('net_margin', '정보 없음')}%
-- ROE(자기자본이익률): {ratios.get('roe', '정보 없음')}%
-- ROA(총자산이익률): {ratios.get('roa', '정보 없음')}%
-- 부채비율: {ratios.get('debt_ratio', '정보 없음')}%
-- 자기자본비율: {ratios.get('equity_ratio', '정보 없음')}%
-- 유동비율: {ratios.get('current_ratio', '정보 없음')}%
+=== 주요 재무 지표 (최근 연도 기준) ===
+• 매출액: {ratios.get('revenue_formatted', '정보 없음')}
+• 영업이익: {ratios.get('operating_profit_formatted', '정보 없음')}
+• 당기순이익: {ratios.get('net_income_formatted', '정보 없음')}
+• 자산총계: {ratios.get('total_assets_formatted', '정보 없음')}
+• 부채총계: {ratios.get('total_liabilities_formatted', '정보 없음')}
+• 자본총계: {ratios.get('total_equity_formatted', '정보 없음')}
+
+=== 재무비율 분석 ===
+• 영업이익률: {ratios.get('operating_margin', '정보 없음')}%
+• 순이익률: {ratios.get('net_margin', '정보 없음')}%
+• ROE(자기자본이익률): {ratios.get('roe', '정보 없음')}%
+• ROA(총자산이익률): {ratios.get('roa', '정보 없음')}%
+• 부채비율: {ratios.get('debt_ratio', '정보 없음')}%
+• 자기자본비율: {ratios.get('equity_ratio', '정보 없음')}%
+• 유동비율: {ratios.get('current_ratio', '정보 없음')}%
 
 위 정보를 바탕으로 다음 내용을 포함하는 전문적인 재무 분석 보고서를 작성해주세요:
-1. 회사 개요 및 현재 재무상태 요약
-2. 수익성 분석
-3. 재무안정성 분석
-4. 투자 관점에서의 주요 시사점
-5. 향후 주의해야 할 리스크 요인
+
+1. **기업 개요 및 사업 특성**
+   - 기업의 주요 사업 영역과 업종 내 위치
+   - 기업 규모와 시장에서의 역할
+
+2. **재무 상태 종합 평가**
+   - 매출 규모와 수익성 수준 평가
+   - 재무 안정성 및 건전성 분석
+
+3. **업종 대비 경쟁력 분석**
+   - 해당 업종의 일반적 특성 대비 이 기업의 강점/약점
+   - 업종별 주요 관심 지표 중심 분석
+
+4. **투자 관점에서의 평가**
+   - 투자 매력도와 주요 투자 포인트
+   - 기업 가치 평가 관련 시사점
+
+5. **리스크 요인 및 주의사항**
+   - 업종별 특성을 고려한 주요 리스크
+   - 재무 지표상 나타나는 잠재적 위험 요소
+
+보고서는 구체적인 수치를 인용하며 객관적이고 전문적인 톤으로 작성해주세요.
 """
 
         print("\n=== OpenAI SDK 요청 정보 ===", flush=True)
@@ -623,21 +742,20 @@ def get_company_financial(corp_code):
 def get_ai_report(corp_code):
     """AI 분석 보고서 생성 API"""
     try:
-        # 회사 정보 조회
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM companies WHERE corp_code = ?', (corp_code,))
-        company = cursor.fetchone()
-        conn.close()
+        # 강화된 회사 정보 조회
+        print(f"🔍 기업 정보 조회 시작: {corp_code}", flush=True)
+        enhanced_company_info = get_enhanced_company_info(corp_code)
         
-        if not company:
+        if not enhanced_company_info:
             return jsonify({
                 'status': 'error',
                 'message': '회사를 찾을 수 없습니다.'
             }), 404
         
+        print(f"✅ 기업 정보 조회 완료: {enhanced_company_info['corp_name']} ({enhanced_company_info.get('industry_classified', '업종 미분류')})", flush=True)
+        
         # 비상장회사 체크
-        if not company['stock_code'] or not company['stock_code'].strip():
+        if not enhanced_company_info['stock_code'] or not enhanced_company_info['stock_code'].strip():
             return jsonify({
                 'status': 'error',
                 'message': '비상장회사는 AI 분석 보고서를 제공하지 않습니다.'
@@ -645,6 +763,8 @@ def get_ai_report(corp_code):
         
         year = request.args.get('year', '2023')
         report_type = request.args.get('report_type', '11011')
+        
+        print(f"📊 재무데이터 조회 시작: {year}년 {report_type} 보고서", flush=True)
         
         # 재무데이터 조회
         financial_result = get_financial_data(corp_code, year, report_type)
@@ -657,8 +777,16 @@ def get_ai_report(corp_code):
         financial_data = financial_result['data']
         ratios = calculate_financial_ratios(financial_data)
         
-        # AI 보고서 생성
-        ai_report = generate_financial_report(dict(company), financial_data, ratios)
+        print(f"💰 재무비율 계산 완료: 매출액 {ratios.get('revenue_formatted', 'N/A')}, 영업이익률 {ratios.get('operating_margin', 'N/A')}%", flush=True)
+        
+        # 강화된 기업 정보로 AI 보고서 생성
+        print(f"🤖 AI 분석 보고서 생성 시작...", flush=True)
+        ai_report = generate_financial_report(enhanced_company_info, financial_data, ratios)
+        
+        if ai_report['status'] == 'success':
+            print(f"✅ AI 분석 보고서 생성 완료 (길이: {len(ai_report.get('report', ''))}자)", flush=True)
+        else:
+            print(f"❌ AI 분석 보고서 생성 실패: {ai_report.get('message', 'Unknown error')}", flush=True)
         
         return jsonify(ai_report)
         
