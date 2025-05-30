@@ -11,7 +11,23 @@ from openai import OpenAI
 # 환경 변수 로드
 print("현재 작업 디렉토리:", os.getcwd())
 print(".env 파일 존재 여부:", os.path.exists('.env'))
-load_dotenv(override=True)
+
+# Render에서는 .env 파일이 없으므로 조건부로 로드
+if os.path.exists('.env'):
+    load_dotenv(override=True)
+    print(".env 파일을 로드했습니다.")
+else:
+    print(".env 파일이 없습니다. 시스템 환경 변수를 사용합니다.")
+
+# 모든 환경 변수 출력 (디버깅용)
+print("모든 환경 변수:")
+for key, value in os.environ.items():
+    if 'API' in key or 'KEY' in key:
+        # API 키는 보안상 일부만 표시
+        if value:
+            print(f"  {key}: {value[:10]}...{value[-4:] if len(value) > 14 else value}")
+        else:
+            print(f"  {key}: None")
 
 app = Flask(__name__)
 
@@ -19,17 +35,30 @@ app = Flask(__name__)
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 print("OPENAI_API_KEY 존재 여부:", OPENAI_API_KEY is not None)
 print("OPENAI_API_KEY 길이:", len(OPENAI_API_KEY) if OPENAI_API_KEY else 0)
+if OPENAI_API_KEY:
+    print("OPENAI_API_KEY 시작 부분:", OPENAI_API_KEY[:10] + "..." if len(OPENAI_API_KEY) > 10 else OPENAI_API_KEY)
 
 # OpenAI 클라이언트 초기화
 openai_client = None
 if OPENAI_API_KEY:
     try:
+        print(f"OpenAI API 키로 클라이언트 초기화 시도 중... (키 길이: {len(OPENAI_API_KEY)})")
         openai_client = OpenAI(api_key=OPENAI_API_KEY)
-        print("OpenAI 클라이언트 초기화 성공")
+        print("✅ OpenAI 클라이언트 초기화 성공")
+        
+        # 간단한 API 테스트 (선택사항)
+        try:
+            test_response = openai_client.models.list()
+            print("✅ OpenAI API 연결 테스트 성공")
+        except Exception as test_e:
+            print(f"⚠️ OpenAI API 연결 테스트 실패: {test_e}")
+            
     except Exception as e:
-        print(f"OpenAI 클라이언트 초기화 실패: {e}")
+        print(f"❌ OpenAI 클라이언트 초기화 실패: {e}")
+        openai_client = None
 else:
-    print("OpenAI API 키가 없어 클라이언트를 초기화하지 않습니다.")
+    print("❌ OpenAI API 키가 없어 클라이언트를 초기화하지 않습니다.")
+    print("환경 변수 OPENAI_API_KEY를 확인해주세요.")
 
 # DART Open API 설정
 DART_API_KEY = os.getenv('DART_API_KEY')
@@ -475,15 +504,24 @@ def get_company_financial(corp_code):
                 })
                 break
     
+    # AI 보고서 상태 확인
+    ai_report_status = {
+        'status': 'disabled',
+        'message': 'AI 분석 보고서 기능이 현재 비활성화되어 있습니다. OpenAI API 키를 설정해주세요.'
+    }
+    
+    if openai_client:
+        ai_report_status = {
+            'status': 'enabled',
+            'message': 'AI 분석 보고서를 사용할 수 있습니다.'
+        }
+    
     return jsonify({
         'financial_ratios': ratios,
         'chart_data': chart_data,
         'table_data': table_data,
         'raw_data': financial_data['cfs']['bs'][:10],  # 상위 10개만
-        'ai_report': {
-            'status': 'disabled',
-            'message': 'AI 분석 보고서 기능이 현재 비활성화되어 있습니다. OpenAI API 키를 설정해주세요.'
-        }
+        'ai_report': ai_report_status
     })
 
 @app.route('/api/financial/<corp_code>/ai_report')
